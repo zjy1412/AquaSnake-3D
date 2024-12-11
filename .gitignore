@@ -1,0 +1,27 @@
+# Visual Studio
+.vs
+
+# VS Code
+.vscode
+
+# Build output
+out
+
+# CMake
+CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Binary files
+*.exe
+*.dll
+*.so
+*.a
+*.o
+*.obj
+
+# Temp files
+*.log
+*.tmp
