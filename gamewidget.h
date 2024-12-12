@@ -84,7 +84,7 @@ private:
     static constexpr float CAMERA_SMOOTH_FACTOR = 0.1f;
     
     // 添加无敌帧相关变量
-    int invincibleFrames = 0;  // 当���无敌帧计数
+    int invincibleFrames = 0;  // 当前的无敌帧计数
 
     // 相机设置优化
     struct CameraSettings {

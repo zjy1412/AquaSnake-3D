@@ -22,7 +22,7 @@ public:
     glm::vec3 getHeadPosition() const { return body.front(); }
     const std::vector<glm::vec3>& getBody() const { return body; }
     glm::vec3 getDirection() const { return direction; }  // 添加这行
-    bool checkSelfCollision() const;  // 移到 public ���域
+    bool checkSelfCollision() const;  // 移到 public 区域
     float getMovementSpeed() const { return moveSpeed; }  // 添加 getter
     static constexpr float GROWTH_FACTOR = 3;  // 移到 public 区域
     float getSegmentSize() const { return DEFAULT_SEGMENT_SIZE; }  // 添加 getter

@@ -197,6 +197,13 @@ void GameWidget::paintGL()
 
 void GameWidget::keyPressEvent(QKeyEvent *event)
 {
+    // R键重置游戏 - 这个检查应该放在最前面，无论游戏状态如何都可以重置
+    if (event->key() == Qt::Key_R) {
+        qDebug() << "Resetting game via R key";
+        resetGame();
+        return;
+    }
+
     if(gameState != GameState::PLAYING || !snake) return;
 
     const float ROTATION_ANGLE = glm::radians(90.0f);  // 90度旋转
@@ -206,22 +213,18 @@ void GameWidget::keyPressEvent(QKeyEvent *event)
 
     switch(event->key()) {
         case Qt::Key_W: {
-            // 向上转 - 绕右向量旋转（改为正角度）
             snake->rotateAroundAxis(currentRight, ROTATION_ANGLE);
             break;
         }
         case Qt::Key_S: {
-            // 向下转 - 绕右向量旋转（改为负角度）
             snake->rotateAroundAxis(currentRight, -ROTATION_ANGLE);
             break;
         }
         case Qt::Key_A: {
-            // 向左转 - 绕上向量旋转（改为正角度）
             snake->rotateAroundAxis(currentUp, ROTATION_ANGLE);
             break;
         }
         case Qt::Key_D: {
-            // 向右转 - 绕上向量旋转（改为负角度）
             snake->rotateAroundAxis(currentUp, -ROTATION_ANGLE);
             break;
         }
@@ -419,7 +422,7 @@ bool GameWidget::isValidFoodPosition(const glm::vec3& pos) const
 
 bool GameWidget::isInAquarium(const glm::vec3& pos) const
 {
-    float margin = aquariumSize * 0.1f;  // 10%的边界余量
+    float margin = aquariumSize * 0.1f;  // 10%的边界预留量
     float limit = aquariumSize - margin;
     float heightLimit = limit * 0.5f;    // 高度限制为一半
     
