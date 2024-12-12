@@ -94,6 +94,8 @@ private:
         float baseFOV;       // 基础视野角度
         float maxFOV;        // 最大视野角度
         float smoothFactor;  // 平滑因子
+        float rotationSpeed;      // 旋转速度
+        float rotationSmoothing;  // 旋转平滑度
     };
     
     // 统一的相机设置，不再分不同模式
@@ -102,8 +104,10 @@ private:
         400.0f,  // 最小高度 - 提高基础高度
         800.0f,  // 最大高度 - 增加最大高度
         60.0f,   // 基础FOV - 增大基础视野
-        75.0f,   // 最大FOV - 增大最大视野
-        0.05f    // 平滑因子
+        75.0f,   // 最大FOV - 墛大最大视野
+        0.05f,   // 平滑因子
+        0.15f,   // 旋转速度
+        0.08f    // 旋转平滑度
     };
     
     // 相机行为参数
@@ -123,6 +127,11 @@ private:
     // 相机位置偏移参数
     static constexpr float SIDE_OFFSET_FACTOR = 0.3f;   // 相机侧向偏移因子
     static constexpr float FORWARD_OFFSET = 300.0f;     // 前方观察点偏移
+
+    // 相机旋转插值参数
+    glm::quat currentCameraRotation;    // 当前相机旋转
+    glm::quat targetCameraRotation;     // 目标相机旋转 
+    float rotationSmoothFactor;         // 旋转平滑因子
 };
 
 #endif // GAMEWIDGET_H

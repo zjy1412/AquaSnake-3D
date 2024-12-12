@@ -36,7 +36,7 @@ private:
     glm::vec3 targetDirection;  // 目标方向
     float segmentSize;
     float moveSpeed;
-    static constexpr float DEFAULT_SEGMENT_SIZE = 100.0f;   // 再次增大蛇身大小
+    static constexpr float DEFAULT_SEGMENT_SIZE = 60.0f;   // 再次增大蛇身大小
     static constexpr float DEFAULT_MOVE_SPEED = 8.0f;    // 降低移动速度
     static constexpr float TURN_SPEED = 0.3f;   // 加快转向速度
     static constexpr float MIN_DIRECTION_CHANGE = 0.05f; // 降低最小方向变化阈值

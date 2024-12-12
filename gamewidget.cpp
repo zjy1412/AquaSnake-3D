@@ -32,6 +32,9 @@ GameWidget::GameWidget(QWidget *parent)
     , targetHeight(CAMERA_SETTINGS.minHeight)
     , currentFOV(CAMERA_SETTINGS.baseFOV)
     , targetFOV(CAMERA_SETTINGS.baseFOV)
+    , currentCameraRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f))
+    , targetCameraRotation(currentCameraRotation)
+    , rotationSmoothFactor(CAMERA_SETTINGS.rotationSmoothing)
 {
     // 初始化定时器
     gameTimer = new QTimer(this);
@@ -139,7 +142,7 @@ void GameWidget::paintGL()
     glMatrixMode(GL_PROJECTION);
     glLoadMatrixf(glm::value_ptr(projectionMatrix));
     
-    // 设置模型视图矩阵
+    // 设置模型视图���阵
     glMatrixMode(GL_MODELVIEW);
     glLoadMatrixf(glm::value_ptr(viewMatrix));
     
@@ -308,41 +311,58 @@ void GameWidget::updateCamera()
     glm::vec3 snakeUp = snake->getUpDirection();
     glm::vec3 snakeRight = snake->getRightDirection();
 
-    // 计算相机相对位置（保持相对于蛇的固定视角）
-    const float cameraDistance = CAMERA_SETTINGS.distance;
-    const float cameraHeight = CAMERA_SETTINGS.minHeight;
-    const float lateralOffset = CAMERA_SETTINGS.distance * SIDE_OFFSET_FACTOR;
-
-    // 计算相机目标位置
-    glm::vec3 idealCameraPos = snakeHead
-        - snakeDir * cameraDistance      // 后退
-        + snakeUp * cameraHeight         // 上升
-        + snakeRight * lateralOffset;    // 侧移
-
-    // 计算观察点（稍微超前于蛇头）
-    glm::vec3 lookAtPoint = snakeHead 
-        + snakeDir * FORWARD_OFFSET 
-        + snakeUp * (cameraHeight * 0.2f); // 略微上抬视线
-
+    // 计算目标相机旋转
+    glm::vec3 idealLookDir = -snakeDir;  // 相机应该看向蛇头的反方向
+    glm::vec3 idealUp = snakeUp;
+    
+    // 构建目标旋转矩阵
+    glm::mat3 targetRotationMat = glm::mat3(
+        glm::cross(idealLookDir, idealUp),  // right
+        idealUp,                            // up
+        -idealLookDir                       // forward
+    );
+    
+    // 转换为四元数
+    targetCameraRotation = glm::quat_cast(targetRotationMat);
+    
+    // 平滑插值当前旋转到目标旋转
+    currentCameraRotation = glm::slerp(
+        currentCameraRotation,
+        targetCameraRotation,
+        rotationSmoothFactor
+    );
+    
+    // 应用旋转获取相机位置
+    glm::mat4 rotationMatrix = glm::mat4_cast(currentCameraRotation);
+    glm::vec3 baseOffset = glm::vec3(
+        0.0f,
+        CAMERA_SETTINGS.minHeight,
+        -CAMERA_SETTINGS.distance
+    );
+    
+    // 计算相机位置和观察点
+    glm::vec3 rotatedOffset = glm::vec3(rotationMatrix * glm::vec4(baseOffset, 1.0f));
+    glm::vec3 idealCameraPos = snakeHead + rotatedOffset;
+    
+    // 添加侧向偏移
+    glm::vec3 sideOffset = snakeRight * (CAMERA_SETTINGS.distance * SIDE_OFFSET_FACTOR);
+    idealCameraPos += sideOffset;
+    
     // 平滑过渡到新的相机位置
-    if (isTransitioning) {
-        transitionProgress += transitionSpeed;
-        if (transitionProgress >= 1.0f) {
-            isTransitioning = false;
-            cameraPos = idealCameraPos;
-        } else {
-            float smoothProgress = glm::smoothstep(0.0f, 1.0f, transitionProgress);
-            cameraPos = glm::mix(transitionStart, idealCameraPos, smoothProgress);
-        }
-    } else {
-        cameraPos = glm::mix(cameraPos, idealCameraPos, CAMERA_SETTINGS.smoothFactor);
-    }
+    cameraPos = glm::mix(cameraPos, idealCameraPos, CAMERA_SETTINGS.smoothFactor);
+    
+    // 计算并平滑过渡到新的观察点
+    glm::vec3 idealLookAtPoint = snakeHead 
+        + snakeDir * FORWARD_OFFSET 
+        + snakeUp * (CAMERA_SETTINGS.minHeight * 0.2f);
+    cameraTarget = glm::mix(cameraTarget, idealLookAtPoint, CAMERA_SETTINGS.smoothFactor);
 
-    // 更新相机目标点
-    cameraTarget = glm::mix(cameraTarget, lookAtPoint, CAMERA_SETTINGS.smoothFactor);
-
-    // 构建视图矩阵（使用蛇的上方向）
-    viewMatrix = glm::lookAt(cameraPos, cameraTarget, snakeUp);
+    // 构建视图矩阵
+    viewMatrix = glm::lookAt(
+        cameraPos,
+        cameraTarget,
+        glm::vec3(glm::mat4_cast(currentCameraRotation) * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f))
+    );
 
     // 更新投影矩阵
     float aspect = width() / static_cast<float>(height());
