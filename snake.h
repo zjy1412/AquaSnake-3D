@@ -1,8 +1,13 @@
 #ifndef SNAKE_H
 #define SNAKE_H
 
+#define GLM_ENABLE_EXPERIMENTAL  // 添加这行启用实验性特性
+
 #include <vector>
 #include <glm/glm.hpp>
+#include <glm/gtx/quaternion.hpp>  // 添加四元数支持
+#include <glm/gtc/quaternion.hpp>  // 添加四元数支持
+#include <glm/gtx/rotate_vector.hpp>  // 添加向量旋转支持
 
 class Snake {
 public:
@@ -17,10 +22,13 @@ public:
     glm::vec3 getHeadPosition() const { return body.front(); }
     const std::vector<glm::vec3>& getBody() const { return body; }
     glm::vec3 getDirection() const { return direction; }  // 添加这行
-    bool checkSelfCollision() const;  // 移到 public 区域
+    bool checkSelfCollision() const;  // 移到 public ���域
     float getMovementSpeed() const { return moveSpeed; }  // 添加 getter
     static constexpr float GROWTH_FACTOR = 3;  // 移到 public 区域
     float getSegmentSize() const { return DEFAULT_SEGMENT_SIZE; }  // 添加 getter
+    glm::vec3 getUpDirection() const { return upDirection; }
+    glm::vec3 getRightDirection() const { return glm::normalize(glm::cross(direction, upDirection)); }
+    void rotateAroundAxis(const glm::vec3& axis, float angle);
 
 private:
     std::vector<glm::vec3> body;
@@ -33,6 +41,8 @@ private:
     static constexpr float TURN_SPEED = 0.3f;   // 加快转向速度
     static constexpr float MIN_DIRECTION_CHANGE = 0.05f; // 降低最小方向变化阈值
     static constexpr float MAX_TURN_ANGLE = 90.0f; // 最大转向角度
+    glm::vec3 upDirection;      // 蛇的上方向
+    void updateDirections();     // 更新方向向量
 };
 
 #endif // SNAKE_H

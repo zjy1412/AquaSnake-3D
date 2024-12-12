@@ -7,6 +7,7 @@
 Snake::Snake(float startX, float startY, float startZ)
     : direction(1.0f, 0.0f, 0.0f)
     , targetDirection(1.0f, 0.0f, 0.0f)
+    , upDirection(0.0f, 1.0f, 0.0f)  // 初始上方向为世界空间的上
     , segmentSize(DEFAULT_SEGMENT_SIZE)
     , moveSpeed(DEFAULT_MOVE_SPEED)
 {
@@ -27,6 +28,7 @@ void Snake::move()
         direction = glm::normalize(
             glm::mix(direction, targetDirection, TURN_SPEED)
         );
+        updateDirections();
     }
 
     // 更新蛇的位置
@@ -55,29 +57,37 @@ void Snake::grow()
 
 void Snake::setDirection(const glm::vec3& newDir)
 {
-    if (glm::length(newDir) < 0.01f) return;  // 防止零向量
-    
-    glm::vec3 normalizedNewDir = glm::normalize(newDir);
-    float dotProduct = glm::dot(direction, normalizedNewDir);
-    
-    // 计算转向角度
-    float angle = glm::degrees(glm::acos(glm::clamp(dotProduct, -1.0f, 1.0f)));
-    
-    // 限制转向角度
-    if (angle > MAX_TURN_ANGLE) {
-        // 使用球面插值进行平滑转向
-        normalizedNewDir = glm::normalize(
-            glm::mix(direction, normalizedNewDir, MAX_TURN_ANGLE / angle)
-        );
-    }
-    
-    // 防止反向运动
-    if (dotProduct < -0.5f) {
-        return;
-    }
+    if (glm::length(newDir) < 0.01f) return;
 
-    // 设置目标方向，实际转向将在move()中平滑进行
-    targetDirection = normalizedNewDir;
+    // 保存旧的方向用于平滑过渡
+    glm::vec3 oldDirection = direction;
+    
+    // 规范化新方向
+    targetDirection = glm::normalize(newDir);
+    
+    // 使用glm::rotate函数代替四元数直接操作
+    float angle = glm::acos(glm::dot(glm::normalize(oldDirection), targetDirection));
+    if (angle > 0.01f) {  // 确保有足够的角度差异
+        glm::vec3 rotationAxis = glm::cross(oldDirection, targetDirection);
+        if (glm::length(rotationAxis) > 0.01f) {  // 确保旋转轴有效
+            upDirection = glm::rotate(upDirection, angle, glm::normalize(rotationAxis));
+        }
+    }
+}
+
+void Snake::rotateAroundAxis(const glm::vec3& axis, float angle)
+{
+    // 使用glm::rotate函数进行旋转
+    glm::vec3 normalizedAxis = glm::normalize(axis);
+    direction = glm::rotate(direction, angle, normalizedAxis);
+    upDirection = glm::rotate(upDirection, angle, normalizedAxis);
+    targetDirection = direction;
+}
+
+void Snake::updateDirections()
+{
+    // 确保direction和upDirection保持垂直
+    upDirection = glm::normalize(upDirection - direction * glm::dot(direction, upDirection));
 }
 
 bool Snake::checkCollision(const glm::vec3& point) const

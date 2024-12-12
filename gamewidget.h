@@ -1,6 +1,8 @@
 #ifndef GAMEWIDGET_H
 #define GAMEWIDGET_H
 
+#define GLM_ENABLE_EXPERIMENTAL  // 添加这行启用实验性特性
+
 #include <GL/glew.h>  // 确保GLEW最先包含
 #include <QOpenGLWidget>
 #include <QOpenGLFunctions>
@@ -82,7 +84,7 @@ private:
     static constexpr float CAMERA_SMOOTH_FACTOR = 0.1f;
     
     // 添加无敌帧相关变量
-    int invincibleFrames = 0;  // 当前无敌帧计数
+    int invincibleFrames = 0;  // 当���无敌帧计数
 
     // 相机设置优化
     struct CameraSettings {

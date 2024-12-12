@@ -197,140 +197,34 @@ void GameWidget::paintGL()
 
 void GameWidget::keyPressEvent(QKeyEvent *event)
 {
-    qDebug() << "Key press -" 
-             << "Key:" << event->key()
-             << "Text:" << event->text()
-             << "Modifiers:" << event->modifiers()
-             << "GameState:" << static_cast<int>(gameState);
+    if(gameState != GameState::PLAYING || !snake) return;
 
-    // 总是允许重置游戏
-    if(event->key() == Qt::Key_R) {
-        qDebug() << "Resetting game via R key";
-        resetGame();
-        return;
-    }
+    const float ROTATION_ANGLE = glm::radians(90.0f);  // 90度旋转
+    glm::vec3 currentDir = snake->getDirection();
+    glm::vec3 currentUp = snake->getUpDirection();
+    glm::vec3 currentRight = snake->getRightDirection();
 
-    // 修改暂停/恢复逻辑
-    if(event->key() == Qt::Key_P) {
-        if(gameState == GameState::PLAYING) {
-            gameState = GameState::PAUSED;
-            qDebug() << "Game paused";
-        } else if(gameState == GameState::PAUSED || gameState == GameState::GAME_OVER) {
-            gameState = GameState::PLAYING;
-            qDebug() << "Game resumed";
+    switch(event->key()) {
+        case Qt::Key_W: {
+            // 向上转 - 绕右向量旋转（改为正角度）
+            snake->rotateAroundAxis(currentRight, ROTATION_ANGLE);
+            break;
         }
-        return;
-    }
-
-    // 只有在 PLAYING 状态下才处理移动
-    if(gameState != GameState::PLAYING) {
-        qDebug() << "Game not in PLAYING state, current state:" << static_cast<int>(gameState);
-        return;
-    }
-
-    // 只改变方向，不直接移动
-    if(gameState == GameState::PLAYING && snake) {
-        glm::vec3 newDir(0.0f);
-        bool directionChanged = false;
-
-        switch(event->key()) {
-            case Qt::Key_W:
-                qDebug() << "W key pressed - Moving UP";
-                newDir = glm::vec3(0.0f, 1.0f, 0.0f);
-                directionChanged = true;
-                break;
-            case Qt::Key_S:
-                qDebug() << "S key pressed - Moving DOWN";
-                newDir = glm::vec3(0.0f, -1.0f, 0.0f);
-                directionChanged = true;
-                break;
-            case Qt::Key_A:
-                qDebug() << "A key pressed - Moving LEFT";
-                newDir = glm::vec3(-1.0f, 0.0f, 0.0f);
-                directionChanged = true;
-                break;
-            case Qt::Key_D:
-                qDebug() << "D key pressed - Moving RIGHT";
-                newDir = glm::vec3(1.0f, 0.0f, 0.0f);
-                directionChanged = true;
-                break;
+        case Qt::Key_S: {
+            // 向下转 - 绕右向量旋转（改为负角度）
+            snake->rotateAroundAxis(currentRight, -ROTATION_ANGLE);
+            break;
         }
-        
-        if(directionChanged) {
-            snake->setDirection(newDir);
-            update();
+        case Qt::Key_A: {
+            // 向左转 - 绕上向量旋转（改为正角度）
+            snake->rotateAroundAxis(currentUp, ROTATION_ANGLE);
+            break;
         }
-    }
-
-    // 修改方向控制逻辑，实现90度转向
-    if(gameState == GameState::PLAYING && snake) {
-        glm::vec3 currentDir = snake->getDirection();
-        glm::vec3 newDir(0.0f);
-        bool directionChanged = false;
-
-        // 计算当前方向在XZ平面和Y轴的分量
-        float verticalComponent = currentDir.y;  // 注意这里不用abs，保留正负
-        glm::vec3 horizontalDir = glm::normalize(glm::vec3(currentDir.x, 0.0f, currentDir.z));
-        glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
-        glm::vec3 right = glm::normalize(glm::cross(horizontalDir, up));
-
-        switch(event->key()) {
-            case Qt::Key_W: {
-                if (glm::abs(verticalComponent) > 0.7f) {
-                    // 在竖直运动时，使用水平方向
-                    // 如果是向上运动，按W时应该继续向上
-                    newDir = (verticalComponent > 0) ? up : horizontalDir;
-                } else {
-                    // 水平运动时保持原有逻辑
-                    newDir = glm::vec3(horizontalDir.x * 0.1f, 1.0f, horizontalDir.z * 0.1f);
-                }
-                directionChanged = true;
-                break;
-            }
-            case Qt::Key_S: {
-                if (glm::abs(verticalComponent) > 0.7f) {
-                    // 在竖直运动时，使用水平方向的反方向
-                    // 如果是向上运动，按S时应该向下
-                    newDir = (verticalComponent > 0) ? -up : -horizontalDir;
-                } else {
-                    // 水平运动时保持原有逻辑
-                    newDir = glm::vec3(horizontalDir.x * 0.1f, -1.0f, horizontalDir.z * 0.1f);
-                }
-                directionChanged = true;
-                break;
-            }
-            case Qt::Key_A: {
-                // 向左90度（叉乘得到的right向量逆向）
-                newDir = -right;
-                directionChanged = true;
-                break;
-            }
-            case Qt::Key_D: {
-                // 向右90度（直接使用right向量）
-                newDir = right;
-                directionChanged = true;
-                break;
-            }
+        case Qt::Key_D: {
+            // 向右转 - 绕上向量旋转（改为负角度）
+            snake->rotateAroundAxis(currentUp, -ROTATION_ANGLE);
+            break;
         }
-        
-        if(directionChanged) {
-            newDir = glm::normalize(newDir);
-            snake->setDirection(newDir);
-            qDebug() << "Direction changed to:" 
-                     << newDir.x << newDir.y << newDir.z;
-            update();
-        }
-    }
-
-    // 修改为只允许按 V 键切换到一个固定的查看视角
-    if(event->key() == Qt::Key_V) {
-        // 临时将相机位置调整到高处俯视点
-        glm::vec3 snakeHead = snake->getHeadPosition();
-        targetCameraPos = snakeHead + glm::vec3(0.0f, CAMERA_SETTINGS.maxHeight * 1.5f, 0.0f);
-        targetCameraTarget = snakeHead;
-        isTransitioning = true;
-        transitionStart = cameraPos;
-        transitionProgress = 0.0f;
     }
 }
 
@@ -405,92 +299,55 @@ void GameWidget::updateGame()
 void GameWidget::updateCamera()
 {
     if (!snake) return;
-    
+
     glm::vec3 snakeHead = snake->getHeadPosition();
     glm::vec3 snakeDir = snake->getDirection();
-    float snakeLength = snake->getBody().size() * snake->getSegmentSize();
-    
-    if (!isTransitioning) {
-        glm::vec3 up(0.0f, 1.0f, 0.0f);
-        
-        // 1. 计算蛇的运动平面
-        float verticalComponent = glm::abs(snakeDir.y);
-        glm::vec3 horizontalDir = glm::normalize(glm::vec3(snakeDir.x, 0.0f, snakeDir.z));
-        
-        // 2. 根据运动方向调整相机位置
-        glm::vec3 cameraOffset;
-        if (verticalComponent > 0.7f) {  // 竖直运动
-            // 在YZ或YX平面上找一个合适的观察位置
-            glm::vec3 sideDir = glm::vec3(-snakeDir.z, 0.0f, snakeDir.x);
-            if (glm::length(sideDir) < 0.1f) {
-                sideDir = glm::vec3(1.0f, 0.0f, 0.0f);  // 默认侧向
-            }
-            cameraOffset = -snakeDir * CAMERA_SETTINGS.distance * 0.5f +  // 后退
-                         glm::normalize(sideDir) * CAMERA_SETTINGS.distance * SIDE_OFFSET_FACTOR;  // 侧向偏移
-        } else {  // 水平或斜向运动
-            glm::vec3 right = glm::normalize(glm::cross(snakeDir, up));
-            cameraOffset = -snakeDir * CAMERA_SETTINGS.distance +  // 基础后退
-                         right * (CAMERA_SETTINGS.distance * SIDE_OFFSET_FACTOR);  // 侧向偏移
-        }
-        
-        // 3. 调整高度
-        float heightFactor = glm::clamp(snakeLength / 2000.0f, 0.0f, 1.0f);
-        float currentHeight = glm::mix(
-            CAMERA_SETTINGS.minHeight,
-            CAMERA_SETTINGS.maxHeight,
-            heightFactor
-        );
-        
-        // 4. 计算最终相机位置
-        glm::vec3 idealPos = snakeHead + cameraOffset;
-        idealPos.y += currentHeight;
-        
-        // 5. 计算观察点
-        glm::vec3 lookAtPoint = snakeHead + snakeDir * FORWARD_OFFSET;
-        if (verticalComponent > 0.7f) {
-            // 在竖直运动时，保持观察点在蛇头前方适当距离
-            lookAtPoint = snakeHead + snakeDir * (FORWARD_OFFSET * 0.5f);
-        }
-        
-        // 6. 更新目标位置和FOV
-        targetCameraPos = idealPos;
-        targetCameraTarget = lookAtPoint;
-        targetFOV = glm::mix(
-            CAMERA_SETTINGS.baseFOV,
-            CAMERA_SETTINGS.maxFOV,
-            heightFactor
-        );
-    }
-    
-    // 平滑过渡
-    if(isTransitioning) {
-        // 更新过渡进度
+    glm::vec3 snakeUp = snake->getUpDirection();
+    glm::vec3 snakeRight = snake->getRightDirection();
+
+    // 计算相机相对位置（保持相对于蛇的固定视角）
+    const float cameraDistance = CAMERA_SETTINGS.distance;
+    const float cameraHeight = CAMERA_SETTINGS.minHeight;
+    const float lateralOffset = CAMERA_SETTINGS.distance * SIDE_OFFSET_FACTOR;
+
+    // 计算相机目标位置
+    glm::vec3 idealCameraPos = snakeHead
+        - snakeDir * cameraDistance      // 后退
+        + snakeUp * cameraHeight         // 上升
+        + snakeRight * lateralOffset;    // 侧移
+
+    // 计算观察点（稍微超前于蛇头）
+    glm::vec3 lookAtPoint = snakeHead 
+        + snakeDir * FORWARD_OFFSET 
+        + snakeUp * (cameraHeight * 0.2f); // 略微上抬视线
+
+    // 平滑过渡到新的相机位置
+    if (isTransitioning) {
         transitionProgress += transitionSpeed;
-        
-        if(transitionProgress >= 1.0f) {
-            // 过渡完成
+        if (transitionProgress >= 1.0f) {
             isTransitioning = false;
-            cameraPos = targetCameraPos;
+            cameraPos = idealCameraPos;
         } else {
-            // 使用平滑插值进行��渡
             float smoothProgress = glm::smoothstep(0.0f, 1.0f, transitionProgress);
-            cameraPos = glm::mix(transitionStart, targetCameraPos, smoothProgress);
+            cameraPos = glm::mix(transitionStart, idealCameraPos, smoothProgress);
         }
     } else {
-        cameraPos = glm::mix(cameraPos, targetCameraPos, CAMERA_SETTINGS.smoothFactor);
-        cameraTarget = glm::mix(cameraTarget, targetCameraTarget, CAMERA_SETTINGS.smoothFactor);
-        currentFOV = glm::mix(currentFOV, targetFOV, FOV_SMOOTH_FACTOR);
+        cameraPos = glm::mix(cameraPos, idealCameraPos, CAMERA_SETTINGS.smoothFactor);
     }
-    
-    // 更新矩阵
-    viewMatrix = glm::lookAt(cameraPos, cameraTarget, glm::vec3(0.0f, 1.0f, 0.0f));
-    
+
+    // 更新相机目标点
+    cameraTarget = glm::mix(cameraTarget, lookAtPoint, CAMERA_SETTINGS.smoothFactor);
+
+    // 构建视图矩阵（使用蛇的上方向）
+    viewMatrix = glm::lookAt(cameraPos, cameraTarget, snakeUp);
+
+    // 更新投影矩阵
     float aspect = width() / static_cast<float>(height());
     projectionMatrix = glm::perspective(
         glm::radians(currentFOV),
         aspect,
         0.1f,
-        3000.0f  // 增加远平面距离
+        3000.0f
     );
 }
 
