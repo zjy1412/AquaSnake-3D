@@ -2,6 +2,7 @@
 #include <QKeyEvent>
 #include <glm/gtc/type_ptr.hpp>
 #include <GL/glew.h>
+#include "food.h"
 
 // 在头文件定义常量，删除这里的类定义
 static constexpr int INVINCIBLE_FRAMES_AFTER_FOOD = 20;    // 吃到食物后的无敌帧数
@@ -16,7 +17,6 @@ GameWidget::GameWidget(QWidget *parent)
     , cameraHeight(DEFAULT_CAMERA_HEIGHT)        // 降低相机高度
     , cameraAngle(CAMERA_DEFAULT_ANGLE)
     , snake(nullptr)
-    , foodPosition(0.0f)
     , cameraPos(0.0f, DEFAULT_CAMERA_HEIGHT, DEFAULT_CAMERA_DISTANCE) // 调整初始相机位置
     , cameraTarget(0.0f, 0.0f, 0.0f)  // 看向原点
     , projectionMatrix(1.0f)
@@ -46,7 +46,7 @@ GameWidget::GameWidget(QWidget *parent)
         update();
     });
     
-    // 确保边界已经设置好后再创建蛇
+    // 确保边界已经设置好后再创建��
     if(aquariumSize <= 0) {
         aquariumSize = AQUARIUM_DEFAULT_SIZE;
     }
@@ -142,7 +142,7 @@ void GameWidget::paintGL()
     glMatrixMode(GL_PROJECTION);
     glLoadMatrixf(glm::value_ptr(projectionMatrix));
     
-    // 设置模型视图���阵
+    // 设置模型视图矩阵
     glMatrixMode(GL_MODELVIEW);
     glLoadMatrixf(glm::value_ptr(viewMatrix));
     
@@ -169,13 +169,6 @@ void GameWidget::paintGL()
     glVertex3f(0.0f, 0.0f, aquariumSize);
     glEnd();
     
-    // 绘制食物 - 增大尺寸并使用明亮的颜色
-    glPushMatrix();
-    glTranslatef(foodPosition.x, foodPosition.y, foodPosition.z);
-    glColor3f(1.0f, 1.0f, 0.0f);  // 明亮的黄色
-    snake->drawSphere(1.0f, 16, 16);  // 增大食物尺寸
-    glPopMatrix();
-
     // 绘制障碍物
     for(const auto& obstacle : obstacles) {
         obstacle.draw();
@@ -186,12 +179,8 @@ void GameWidget::paintGL()
     snake->draw();
 
     // 绘制所有食物，增大尺寸
-    for (const auto& foodPos : foodPositions) {
-        glPushMatrix();
-        glTranslatef(foodPos.x, foodPos.y, foodPos.z);
-        glColor3f(1.0f, 0.8f, 0.0f);  // 金黄色
-        snake->drawSphere(60.0f, 16, 16);  // 调整食物大小
-        glPopMatrix();
+    for (const auto& food : foods) {
+        food.draw();
     }
 
     // 强制刷新缓冲区
@@ -258,9 +247,9 @@ void GameWidget::updateGame()
     std::vector<size_t> foodToRemove;
     
     // 首先检查所有需要移除的食物
-    for(size_t i = 0; i < foodPositions.size(); ++i) {
+    for(size_t i = 0; i < foods.size(); ++i) {
         float collisionDistance = snake->getSegmentSize() * FOOD_COLLISION_MULTIPLIER;
-        float distance = glm::distance(snake->getHeadPosition(), foodPositions[i]);
+        float distance = glm::distance(snake->getHeadPosition(), foods[i].getPosition());
         
         // 使判定范围更大
         if (distance < collisionDistance) {
@@ -275,8 +264,8 @@ void GameWidget::updateGame()
         
         // 从后向前移除食物，避免索引失效
         for(auto it = foodToRemove.rbegin(); it != foodToRemove.rend(); ++it) {
-            if(*it < foodPositions.size()) {
-                foodPositions.erase(foodPositions.begin() + *it);
+            if(*it < foods.size()) {
+                foods.erase(foods.begin() + *it);
             }
         }
         
@@ -377,7 +366,7 @@ void GameWidget::updateCamera()
 void GameWidget::spawnFood()
 {
     // 每次生成多个食物
-    int foodToSpawn = MIN_FOOD_COUNT - foodPositions.size();
+    int foodToSpawn = MIN_FOOD_COUNT - foods.size();
     for (int i = 0; i < foodToSpawn; ++i) {
         int maxAttempts = 100;
         int attempts = 0;
@@ -394,14 +383,13 @@ void GameWidget::spawnFood()
             
             // 检查与其他食物的距离
             bool tooClose = false;
-            for (const auto& existingFood : foodPositions) {
-                if (glm::distance(newFoodPos, existingFood) < MIN_FOOD_DISTANCE) {
+            for (const auto& existingFood : foods) {
+                if (glm::distance(newFoodPos, existingFood.getPosition()) < MIN_FOOD_DISTANCE) {
                     tooClose = true;
                     break;
                 }
             }
             
-            // 只检查与障碍物的碰撞，不检查与蛇的碰撞
             validPosition = !tooClose && isInAquarium(newFoodPos);
             
             // 检查与障碍物的碰撞
@@ -415,7 +403,7 @@ void GameWidget::spawnFood()
         } while (!validPosition && ++attempts < maxAttempts);
 
         if (validPosition) {
-            foodPositions.push_back(newFoodPos);
+            foods.emplace_back(newFoodPos);
         }
     }
 }

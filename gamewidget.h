@@ -12,6 +12,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include "snake.h"
 #include "obstacle.h"
+#include "food.h"
 
 class GameWidget : public QOpenGLWidget, protected QOpenGLFunctions
 {
@@ -41,7 +42,6 @@ private:
     float cameraDistance;    // 摄像机距离
     float cameraHeight;      // 摄像机高度
     Snake* snake;
-    glm::vec3 foodPosition;  // 改为使用 glm::vec3
     glm::vec3 cameraPos;
     glm::vec3 cameraTarget;
     glm::mat4 projectionMatrix;
@@ -64,7 +64,7 @@ private:
     const float MIN_FOOD_DISTANCE = 200.0f;         // 食物最小间距
     const int MAX_OBSTACLES = 50;                  // 最大障碍物数量
     const int MIN_FOOD_COUNT = 50;                 // 场景中最少食物数量
-    std::vector<glm::vec3> foodPositions;         // 改为存储多个食物位置
+    std::vector<Food> foods;         // 改为存储多个食物位置
 
     enum class GameState {
         READY = 0,
@@ -102,7 +102,7 @@ private:
     const CameraSettings CAMERA_SETTINGS {
         600.0f,  // 基础距离 - 增加以看到更多内容
         400.0f,  // 最小高度 - 提高基础高度
-        800.0f,  // 最大高度 - 增加最大高度
+        800.0f,  // 最大高度 - 墛大最大高度
         60.0f,   // 基础FOV - 增大基础视野
         75.0f,   // 最大FOV - 墛大最大视野
         0.05f,   // 平滑因子

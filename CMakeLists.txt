@@ -16,12 +16,15 @@ set(SOURCES
     main.cpp
     gamewidget.cpp
     snake.cpp
-    obstacle.cpp  # 添加这一行
+    obstacle.cpp
+    food.cpp    # 添加这行
 )
 
 set(HEADERS
     gamewidget.h
     snake.h
+    obstacle.h
+    food.h      # 添加这行
 )
 
 set(GLEW_INCLUDE_DIR "D:/libraries/glew-2.2.0/include")
