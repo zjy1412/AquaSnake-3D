@@ -83,6 +83,44 @@ private:
     
     // 添加无敌帧相关变量
     int invincibleFrames = 0;  // 当前无敌帧计数
+
+    // 相机设置优化
+    struct CameraSettings {
+        float distance;      // 基础跟随距离
+        float minHeight;     // 最小高度
+        float maxHeight;     // 最大高度
+        float baseFOV;       // 基础视野角度
+        float maxFOV;        // 最大视野角度
+        float smoothFactor;  // 平滑因子
+    };
+    
+    // 统一的相机设置，不再分不同模式
+    const CameraSettings CAMERA_SETTINGS {
+        600.0f,  // 基础距离 - 增加以看到更多内容
+        400.0f,  // 最小高度 - 提高基础高度
+        800.0f,  // 最大高度 - 增加最大高度
+        60.0f,   // 基础FOV - 增大基础视野
+        75.0f,   // 最大FOV - 增大最大视野
+        0.05f    // 平滑因子
+    };
+    
+    // 相机行为参数
+    float currentHeight;              // 当前高度
+    float targetHeight;               // 目标高度
+    float currentFOV;                 // 当前FOV
+    float targetFOV;                  // 目标FOV
+    static constexpr float HEIGHT_SMOOTH_FACTOR = 0.02f;  // 高度平滑因子
+    static constexpr float FOV_SMOOTH_FACTOR = 0.03f;     // FOV平滑因子
+    
+    // 视角切换相关变量
+    bool isTransitioning = false;          // 是否正在过渡
+    glm::vec3 transitionStart;            // 过渡起始位置
+    float transitionProgress = 0.0f;       // 过渡进度
+    float transitionSpeed = 0.05f;         // 过渡速度
+
+    // 相机位置偏移参数
+    static constexpr float SIDE_OFFSET_FACTOR = 0.3f;   // 相机侧向偏移因子
+    static constexpr float FORWARD_OFFSET = 300.0f;     // 前方观察点偏移
 };
 
 #endif // GAMEWIDGET_H

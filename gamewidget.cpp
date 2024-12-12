@@ -28,6 +28,10 @@ GameWidget::GameWidget(QWidget *parent)
     , gameState(GameState::READY)  // 改为 READY 状态
     , score(0)
     , invincibleFrames(0)  // 初始化无敌帧计数
+    , currentHeight(CAMERA_SETTINGS.minHeight)
+    , targetHeight(CAMERA_SETTINGS.minHeight)
+    , currentFOV(CAMERA_SETTINGS.baseFOV)
+    , targetFOV(CAMERA_SETTINGS.baseFOV)
 {
     // 初始化定时器
     gameTimer = new QTimer(this);
@@ -264,22 +268,34 @@ void GameWidget::keyPressEvent(QKeyEvent *event)
         glm::vec3 newDir(0.0f);
         bool directionChanged = false;
 
-        // 计算当前方向在XZ平面上的投影，保持Y分量不变
-        float currentY = currentDir.y;
-        glm::vec3 forward = glm::normalize(glm::vec3(currentDir.x, 0.0f, currentDir.z));
+        // 计算当前方向在XZ平面和Y轴的分量
+        float verticalComponent = currentDir.y;  // 注意这里不用abs，保留正负
+        glm::vec3 horizontalDir = glm::normalize(glm::vec3(currentDir.x, 0.0f, currentDir.z));
         glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
-        glm::vec3 right = glm::normalize(glm::cross(forward, up));
+        glm::vec3 right = glm::normalize(glm::cross(horizontalDir, up));
 
         switch(event->key()) {
             case Qt::Key_W: {
-                // 向上90度
-                newDir = glm::vec3(forward.x * 0.1f, 1.0f, forward.z * 0.1f);
+                if (glm::abs(verticalComponent) > 0.7f) {
+                    // 在竖直运动时，使用水平方向
+                    // 如果是向上运动，按W时应该继续向上
+                    newDir = (verticalComponent > 0) ? up : horizontalDir;
+                } else {
+                    // 水平运动时保持原有逻辑
+                    newDir = glm::vec3(horizontalDir.x * 0.1f, 1.0f, horizontalDir.z * 0.1f);
+                }
                 directionChanged = true;
                 break;
             }
             case Qt::Key_S: {
-                // 向下90度
-                newDir = glm::vec3(forward.x * 0.1f, -1.0f, forward.z * 0.1f);
+                if (glm::abs(verticalComponent) > 0.7f) {
+                    // 在竖直运动时，使用水平方向的反方向
+                    // 如果是向上运动，按S时应该向下
+                    newDir = (verticalComponent > 0) ? -up : -horizontalDir;
+                } else {
+                    // 水平运动时保持原有逻辑
+                    newDir = glm::vec3(horizontalDir.x * 0.1f, -1.0f, horizontalDir.z * 0.1f);
+                }
                 directionChanged = true;
                 break;
             }
@@ -290,7 +306,7 @@ void GameWidget::keyPressEvent(QKeyEvent *event)
                 break;
             }
             case Qt::Key_D: {
-                // 向右90���（直接使用right向量）
+                // 向右90度（直接使用right向量）
                 newDir = right;
                 directionChanged = true;
                 break;
@@ -306,6 +322,16 @@ void GameWidget::keyPressEvent(QKeyEvent *event)
         }
     }
 
+    // 修改为只允许按 V 键切换到一个固定的查看视角
+    if(event->key() == Qt::Key_V) {
+        // 临时将相机位置调整到高处俯视点
+        glm::vec3 snakeHead = snake->getHeadPosition();
+        targetCameraPos = snakeHead + glm::vec3(0.0f, CAMERA_SETTINGS.maxHeight * 1.5f, 0.0f);
+        targetCameraTarget = snakeHead;
+        isTransitioning = true;
+        transitionStart = cameraPos;
+        transitionProgress = 0.0f;
+    }
 }
 
 void GameWidget::updateGame()
@@ -336,7 +362,7 @@ void GameWidget::updateGame()
         float collisionDistance = snake->getSegmentSize() * FOOD_COLLISION_MULTIPLIER;
         float distance = glm::distance(snake->getHeadPosition(), foodPositions[i]);
         
-        // 使用渐进式判定：距离越近，越容易吃到
+        // 使判定范围更大
         if (distance < collisionDistance) {
             foodToRemove.push_back(i);
             foodEaten = true;
@@ -382,21 +408,90 @@ void GameWidget::updateCamera()
     
     glm::vec3 snakeHead = snake->getHeadPosition();
     glm::vec3 snakeDir = snake->getDirection();
+    float snakeLength = snake->getBody().size() * snake->getSegmentSize();
     
-    // 调整相机参数
-    float distanceBehind = 400.0f;    // 增加跟随距离
-    float heightAbove = 300.0f;       // 增加高度
-    float lookAheadDistance = 200.0f;  // 增加前视距离
+    if (!isTransitioning) {
+        glm::vec3 up(0.0f, 1.0f, 0.0f);
+        
+        // 1. 计算蛇的运动平面
+        float verticalComponent = glm::abs(snakeDir.y);
+        glm::vec3 horizontalDir = glm::normalize(glm::vec3(snakeDir.x, 0.0f, snakeDir.z));
+        
+        // 2. 根据运动方向调整相机位置
+        glm::vec3 cameraOffset;
+        if (verticalComponent > 0.7f) {  // 竖直运动
+            // 在YZ或YX平面上找一个合适的观察位置
+            glm::vec3 sideDir = glm::vec3(-snakeDir.z, 0.0f, snakeDir.x);
+            if (glm::length(sideDir) < 0.1f) {
+                sideDir = glm::vec3(1.0f, 0.0f, 0.0f);  // 默认侧向
+            }
+            cameraOffset = -snakeDir * CAMERA_SETTINGS.distance * 0.5f +  // 后退
+                         glm::normalize(sideDir) * CAMERA_SETTINGS.distance * SIDE_OFFSET_FACTOR;  // 侧向偏移
+        } else {  // 水平或斜向运动
+            glm::vec3 right = glm::normalize(glm::cross(snakeDir, up));
+            cameraOffset = -snakeDir * CAMERA_SETTINGS.distance +  // 基础后退
+                         right * (CAMERA_SETTINGS.distance * SIDE_OFFSET_FACTOR);  // 侧向偏移
+        }
+        
+        // 3. 调整高度
+        float heightFactor = glm::clamp(snakeLength / 2000.0f, 0.0f, 1.0f);
+        float currentHeight = glm::mix(
+            CAMERA_SETTINGS.minHeight,
+            CAMERA_SETTINGS.maxHeight,
+            heightFactor
+        );
+        
+        // 4. 计算最终相机位置
+        glm::vec3 idealPos = snakeHead + cameraOffset;
+        idealPos.y += currentHeight;
+        
+        // 5. 计算观察点
+        glm::vec3 lookAtPoint = snakeHead + snakeDir * FORWARD_OFFSET;
+        if (verticalComponent > 0.7f) {
+            // 在竖直运动时，保持观察点在蛇头前方适当距离
+            lookAtPoint = snakeHead + snakeDir * (FORWARD_OFFSET * 0.5f);
+        }
+        
+        // 6. 更新目标位置和FOV
+        targetCameraPos = idealPos;
+        targetCameraTarget = lookAtPoint;
+        targetFOV = glm::mix(
+            CAMERA_SETTINGS.baseFOV,
+            CAMERA_SETTINGS.maxFOV,
+            heightFactor
+        );
+    }
     
-    targetCameraPos = snakeHead - (snakeDir * distanceBehind) + glm::vec3(0.0f, heightAbove, 0.0f);
-    targetCameraTarget = snakeHead + (snakeDir * lookAheadDistance);
+    // 平滑过渡
+    if(isTransitioning) {
+        // 更新过渡进度
+        transitionProgress += transitionSpeed;
+        
+        if(transitionProgress >= 1.0f) {
+            // 过渡完成
+            isTransitioning = false;
+            cameraPos = targetCameraPos;
+        } else {
+            // 使用平滑插值进行��渡
+            float smoothProgress = glm::smoothstep(0.0f, 1.0f, transitionProgress);
+            cameraPos = glm::mix(transitionStart, targetCameraPos, smoothProgress);
+        }
+    } else {
+        cameraPos = glm::mix(cameraPos, targetCameraPos, CAMERA_SETTINGS.smoothFactor);
+        cameraTarget = glm::mix(cameraTarget, targetCameraTarget, CAMERA_SETTINGS.smoothFactor);
+        currentFOV = glm::mix(currentFOV, targetFOV, FOV_SMOOTH_FACTOR);
+    }
     
-    // 平滑插值
-    float smoothFactor = 0.05f;
-    cameraPos = glm::mix(cameraPos, targetCameraPos, smoothFactor);
-    cameraTarget = glm::mix(cameraTarget, targetCameraTarget, smoothFactor);
-    
+    // 更新矩阵
     viewMatrix = glm::lookAt(cameraPos, cameraTarget, glm::vec3(0.0f, 1.0f, 0.0f));
+    
+    float aspect = width() / static_cast<float>(height());
+    projectionMatrix = glm::perspective(
+        glm::radians(currentFOV),
+        aspect,
+        0.1f,
+        3000.0f  // 增加远平面距离
+    );
 }
 
 void GameWidget::spawnFood()
@@ -480,6 +575,7 @@ bool GameWidget::isInAquarium(const glm::vec3& pos) const
 
 void GameWidget::drawAquarium()
 {
+    // 先绘制底面网格
     // 绘制底面网格
     glColor3f(0.5f, 0.5f, 0.5f);  // 更亮的网格颜色
     glBegin(GL_LINES);
@@ -492,6 +588,7 @@ void GameWidget::drawAquarium()
     }
     glEnd();
 
+    // 先绘制不透明的边界线框
     // 绘制边界框
     glLineWidth(8.0f);  // 更粗的边界线
     glColor3f(0.0f, 0.7f, 1.0f);  // 更亮的蓝色边界
@@ -519,50 +616,134 @@ void GameWidget::drawAquarium()
     glVertex3f(aquariumSize, -hs, aquariumSize); glVertex3f(aquariumSize, hs, aquariumSize);
     glEnd();
 
-    // 绘制边界面的半透明效果
+    // 修改深度测试设置并绘制透明面
+    glDepthMask(GL_FALSE);  // 禁用深度写入
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_CULL_FACE);
+
+    hs = aquariumSize * 0.5f;
     
-    glColor4f(0.2f, 0.4f, 0.8f, 0.1f);  // 淡蓝色半透明
+    // 判断相机是否在水族箱内
+    bool cameraInside = isInAquarium(cameraPos);
+    
+    // 相机在外部时将透明度降到更低
+    float baseAlpha = cameraInside ? 0.2f : 0.02f;  // 降低外部时的透明度
+    
+    // 按照距离相机的远近对面进行排序
+    struct Face {
+        int index;
+        float distance;
+        glm::vec3 normal;
+        glm::vec3 center;
+    };
+    
+    std::vector<Face> faces;
+    for(int i = 0; i < 6; ++i) {
+        Face face;
+        face.index = i;
+        
+        // 设置面的法线和中心点
+        switch(i) {
+            case 0: // 前面 (Z+)
+                face.normal = glm::vec3(0.0f, 0.0f, 1.0f);
+                face.center = glm::vec3(0.0f, 0.0f, aquariumSize);
+                break;
+            case 1: // 后面 (Z-)
+                face.normal = glm::vec3(0.0f, 0.0f, -1.0f);
+                face.center = glm::vec3(0.0f, 0.0f, -aquariumSize);
+                break;
+            case 2: // 左面 (X-)
+                face.normal = glm::vec3(-1.0f, 0.0f, 0.0f);
+                face.center = glm::vec3(-aquariumSize, 0.0f, 0.0f);
+                break;
+            case 3: // 右面 (X+)
+                face.normal = glm::vec3(1.0f, 0.0f, 0.0f);
+                face.center = glm::vec3(aquariumSize, 0.0f, 0.0f);
+                break;
+            case 4: // 顶面 (Y+)
+                face.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+                face.center = glm::vec3(0.0f, hs, 0.0f);
+                break;
+            case 5: // 底面 (Y-)
+                face.normal = glm::vec3(0.0f, -1.0f, 0.0f);
+                face.center = glm::vec3(0.0f, -hs, 0.0f);
+                break;
+        }
+        
+        face.distance = glm::length(cameraPos - face.center);
+        faces.push_back(face);
+    }
+    
+    // 从远到近排序
+    std::sort(faces.begin(), faces.end(),
+        [](const Face& a, const Face& b) { return a.distance > b.distance; });
+    
+    // 按距离从远到近绘制透明面
     glBegin(GL_QUADS);
-    // 前面
-    glVertex3f(-aquariumSize, -hs, aquariumSize);
-    glVertex3f(aquariumSize, -hs, aquariumSize);
-    glVertex3f(aquariumSize, hs, aquariumSize);
-    glVertex3f(-aquariumSize, hs, aquariumSize);
-    
-    // 后面
-    glVertex3f(-aquariumSize, -hs, -aquariumSize);
-    glVertex3f(-aquariumSize, hs, -aquariumSize);
-    glVertex3f(aquariumSize, hs, -aquariumSize);
-    glVertex3f(aquariumSize, -hs, -aquariumSize);
-    
-    // 左面
-    glVertex3f(-aquariumSize, -hs, -aquariumSize);
-    glVertex3f(-aquariumSize, -hs, aquariumSize);
-    glVertex3f(-aquariumSize, hs, aquariumSize);
-    glVertex3f(-aquariumSize, hs, -aquariumSize);
-    
-    // 右面
-    glVertex3f(aquariumSize, -hs, -aquariumSize);
-    glVertex3f(aquariumSize, hs, -aquariumSize);
-    glVertex3f(aquariumSize, hs, aquariumSize);
-    glVertex3f(aquariumSize, -hs, aquariumSize);
-    
-    // 顶面
-    glVertex3f(-aquariumSize, hs, -aquariumSize);
-    glVertex3f(-aquariumSize, hs, aquariumSize);
-    glVertex3f(aquariumSize, hs, aquariumSize);
-    glVertex3f(aquariumSize, hs, -aquariumSize);
-    
-    // 底面
-    glVertex3f(-aquariumSize, -hs, -aquariumSize);
-    glVertex3f(aquariumSize, -hs, -aquariumSize);
-    glVertex3f(aquariumSize, -hs, aquariumSize);
-    glVertex3f(-aquariumSize, -hs, aquariumSize);
+    for(const Face& face : faces) {
+        // 计算面的透明度
+        float dotProduct = glm::dot(glm::normalize(cameraPos - face.center), face.normal);
+        
+        // 动态调整透明度
+        float alpha;
+        if (!cameraInside) {
+            // 相机在外部时，面向相机的面完全透明
+            alpha = (dotProduct < 0.0f) ? 0.01f : baseAlpha;  // 更低的透明度
+        } else {
+            // 相机在内部时使用正常透明度
+            alpha = baseAlpha;
+        }
+        
+        // 设置颜色和透明度
+        glColor4f(0.2f, 0.4f, 0.8f, alpha);
+        
+        // 绘制面的顶点
+        switch(face.index) {
+            case 0: // 前面 (Z+)
+                glVertex3f(-aquariumSize, -hs, aquariumSize);
+                glVertex3f(aquariumSize, -hs, aquariumSize);
+                glVertex3f(aquariumSize, hs, aquariumSize);
+                glVertex3f(-aquariumSize, hs, aquariumSize);
+                break;
+            case 1: // 后面 (Z-)
+                glVertex3f(-aquariumSize, -hs, -aquariumSize);
+                glVertex3f(-aquariumSize, hs, -aquariumSize);
+                glVertex3f(aquariumSize, hs, -aquariumSize);
+                glVertex3f(aquariumSize, -hs, -aquariumSize);
+                break;
+            case 2: // 左面 (X-)
+                glVertex3f(-aquariumSize, -hs, -aquariumSize);
+                glVertex3f(-aquariumSize, -hs, aquariumSize);
+                glVertex3f(-aquariumSize, hs, aquariumSize);
+                glVertex3f(-aquariumSize, hs, -aquariumSize);
+                break;
+            case 3: // 右面 (X+)
+                glVertex3f(aquariumSize, -hs, -aquariumSize);
+                glVertex3f(aquariumSize, hs, -aquariumSize);
+                glVertex3f(aquariumSize, hs, aquariumSize);
+                glVertex3f(aquariumSize, -hs, aquariumSize);
+                break;
+            case 4: // 顶面 (Y+)
+                glVertex3f(-aquariumSize, hs, -aquariumSize);
+                glVertex3f(-aquariumSize, hs, aquariumSize);
+                glVertex3f(aquariumSize, hs, aquariumSize);
+                glVertex3f(aquariumSize, hs, -aquariumSize);
+                break;
+            case 5: // 底面 (Y-)
+                glVertex3f(-aquariumSize, -hs, -aquariumSize);
+                glVertex3f(aquariumSize, -hs, -aquariumSize);
+                glVertex3f(aquariumSize, -hs, aquariumSize);
+                glVertex3f(-aquariumSize, -hs, aquariumSize);
+                break;
+        }
+    }
     glEnd();
 
+    // 恢复OpenGL状态
+    glEnable(GL_CULL_FACE);
     glDisable(GL_BLEND);
+    glDepthMask(GL_TRUE);   // 重新启用深度写入
     glLineWidth(1.0f);
 }
 
@@ -615,7 +796,7 @@ void GameWidget::resetGame()
 
     // 删除旧的蛇并创建新的
     delete snake;
-    snake = new Snake(-5.0f, 0.0f, 0.0f);  // 起始位置靠左一��
+    snake = new Snake(-5.0f, 0.0f, 0.0f);  // 起始位置靠左一些
     snake->setDirection(glm::vec3(1.0f, 0.0f, 0.0f));
 
     glm::vec3 newPos = snake->getHeadPosition();
