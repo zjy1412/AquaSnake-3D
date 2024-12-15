@@ -25,3 +25,6 @@ Makefile
 # Temp files
 *.log
 *.tmp
+
+.env
+.aider*

@@ -11,6 +11,8 @@ static constexpr float OBSTACLE_COLLISION_MULTIPLIER = 0.7f; // 障碍物碰撞�
 
 GameWidget::GameWidget(QWidget *parent) 
     : QOpenGLWidget(parent)
+    , water(nullptr)  // 初始化水体指针
+    , deltaTime(0.016f)  // 初始化时间步长(假设60fps)
     , gameTimer(nullptr)
     , rotationAngle(0.0f)
     , cameraDistance(DEFAULT_CAMERA_DISTANCE)    // 减小相机距离
@@ -35,6 +37,13 @@ GameWidget::GameWidget(QWidget *parent)
     , currentCameraRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f))
     , targetCameraRotation(currentCameraRotation)
     , rotationSmoothFactor(CAMERA_SETTINGS.rotationSmoothing)
+    , causticTexture(0)
+    , volumetricLightFBO(0)
+    , volumetricLightTexture(0)
+    , waterNormalTexture(0)
+    , bubbleTexture(0)
+    , causticTime(0.0f)
+    , bubblePositions()  // 初始化气泡位置数组
 {
     // 初始化定时器
     gameTimer = new QTimer(this);
@@ -46,7 +55,7 @@ GameWidget::GameWidget(QWidget *parent)
         update();
     });
     
-    // 确保边界已经设置好后再创建��
+    // 确保边界已经设置好后再创建蛇
     if(aquariumSize <= 0) {
         aquariumSize = AQUARIUM_DEFAULT_SIZE;
     }
@@ -80,8 +89,18 @@ GameWidget::GameWidget(QWidget *parent)
 
 GameWidget::~GameWidget()
 {
-    delete snake;
     makeCurrent();
+    
+    delete water;  // 删除水体对象
+    
+    // 清理纹理和FBO
+    if(causticTexture) glDeleteTextures(1, &causticTexture);
+    if(volumetricLightTexture) glDeleteTextures(1, &volumetricLightTexture);
+    if(waterNormalTexture) glDeleteTextures(1, &waterNormalTexture);
+    if(bubbleTexture) glDeleteTextures(1, &bubbleTexture);
+    if(volumetricLightFBO) glDeleteFramebuffers(1, &volumetricLightFBO);
+    
+    delete snake;
     doneCurrent();
 }
 
@@ -113,6 +132,10 @@ void GameWidget::initializeGL()
     cameraPos = glm::vec3(0.0f, 25.0f, 35.0f);  // 拉远初始视角
     cameraTarget = glm::vec3(0.0f);
     viewMatrix = glm::lookAt(cameraPos, cameraTarget, glm::vec3(0.0f, 1.0f, 0.0f));
+
+    // 初始化水体时使用实际的水族箱尺寸
+    water = new Water(aquariumSize);
+    water->init();
 }
 
 void GameWidget::resizeGL(int w, int h)
@@ -181,6 +204,20 @@ void GameWidget::paintGL()
     // 绘制所有食物，增大尺寸
     for (const auto& food : foods) {
         food.draw();
+    }
+
+    // 在渲染水体之前更新和渲染水下效果
+    updateUnderwaterEffects();
+    
+    if(isInAquarium(cameraPos) && cameraPos.y < 0) {
+        renderUnderwaterEffects();
+        // 删除这里的 renderBubbles() 调用，水体的渲染会自动包含气泡效果
+    }
+
+    // 在绘制水体之前更新相机位置
+    if (water) {
+        water->setCameraPosition(cameraPos);
+        water->render(projectionMatrix, viewMatrix);  // water的render方法会处理所有水体相关效果，包括气泡
     }
 
     // 强制刷新缓冲区
@@ -286,6 +323,12 @@ void GameWidget::updateGame()
         invincibleFrames--;
     } else {
         checkCollisions();
+    }
+    
+    // 更新水体，使用正确的deltaTime
+    if (water) {
+        water->update(deltaTime);
+        // 注意：所有水体相关的更新都应该在 water 类中进行
     }
     
     update();
@@ -443,7 +486,6 @@ bool GameWidget::isInAquarium(const glm::vec3& pos) const
 
 void GameWidget::drawAquarium()
 {
-    // 先绘制底面网格
     // 绘制底面网格
     glColor3f(0.5f, 0.5f, 0.5f);  // 更亮的网格颜色
     glBegin(GL_LINES);
@@ -456,8 +498,7 @@ void GameWidget::drawAquarium()
     }
     glEnd();
 
-    // 先绘制不透明的边界线框
-    // 绘制边界框
+    // 绘制不透明的边界线框
     glLineWidth(8.0f);  // 更粗的边界线
     glColor3f(0.0f, 0.7f, 1.0f);  // 更亮的蓝色边界
     
@@ -718,11 +759,73 @@ void GameWidget::checkCollisions()
         }
     }
 
-    // 检查与蛇身的碰撞
+    // 检���与蛇身的碰撞
     if(snake->checkSelfCollision()) {
         qDebug() << "Game over! Self collision";
         gameState = GameState::GAME_OVER;
         gameOver = true;
         return;
     }
+}
+void GameWidget::updateUnderwaterEffects()
+{
+    bool cameraUnderwater = isInAquarium(cameraPos) && cameraPos.y < 0;
+    
+    if(cameraUnderwater) {
+        float depth = -cameraPos.y;
+        underwaterEffects.fogDensity = 0.001f + depth * 0.00001f;
+        underwaterEffects.visibilityRange = 800.0f - depth * 0.5f;
+    }
+}
+
+void GameWidget::renderUnderwaterEffects()
+{
+    // 启用混合
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+    // 添加水下雾效果
+    glEnable(GL_FOG);
+    glFogi(GL_FOG_MODE, GL_EXP2);
+    GLfloat fogColor[] = {
+        underwaterEffects.fogColor.r,
+        underwaterEffects.fogColor.g,
+        underwaterEffects.fogColor.b,
+        1.0f
+    };
+    glFogfv(GL_FOG_COLOR, fogColor);
+    glFogf(GL_FOG_DENSITY, underwaterEffects.fogDensity);
+    
+    // 添加水下色调
+    glColor4f(
+        underwaterEffects.fogColor.r,
+        underwaterEffects.fogColor.g,
+        underwaterEffects.fogColor.b,
+         0.2f
+    );
+    
+    // 在整个视口绘制一个半透明矩形来实现水下效果
+    glDisable(GL_DEPTH_TEST);
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+    
+    glBegin(GL_QUADS);
+    glVertex2f(-1.0f, -1.0f);
+    glVertex2f( 1.0f, -1.0f);
+    glVertex2f( 1.0f,  1.0f);
+    glVertex2f(-1.0f,  1.0f);
+    glEnd();
+    
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    
+    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_FOG);
+    glDisable(GL_BLEND);
 }
