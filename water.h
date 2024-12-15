@@ -32,6 +32,18 @@ public:
         float chromaDispersion = 0.015f;
         float waterDensity = 0.05f;
         float visibilityFalloff = 0.5f;
+        float causticScale = 0.8f;        // 焦散缩放
+        float causticSpeed = 0.5f;        // 焦散动画速度
+        float causticBlend = 0.6f;        // 焦散混合强度
+        int causticLayers = 3;            // 焦散叠加层数
+
+        // 添加水下效果参数
+        float underwaterScatteringDensity = 0.05f;   // 增加散射密度
+        float underwaterVisibility = 600.0f;         // 降低能见度
+        float underwaterCausticIntensity = 1.2f;     // 增强水下焦散
+        float underwaterGodrayIntensity = 0.6f;      // 增强光束效果
+        float underwaterParticleDensity = 200.0f;    // 增加粒子数量
+        glm::vec3 underwaterColor = glm::vec3(0.1f, 0.3f, 0.5f); // 加深水下颜色
     };
 
     WaterParams& getParams() { return waterParams; }
@@ -103,6 +115,32 @@ private:
     const glm::vec3 WATER_COLOR = glm::vec3(0.1f, 0.4f, 0.6f);
 
     glm::vec3 cameraPos; // 添加相机位置成员变量
+
+    struct CausticLayer {
+        float scale;
+        float speed;
+        float offset;
+        glm::vec2 direction;
+    };
+    std::vector<CausticLayer> causticLayers;
+    void generateCausticTexture();
+    void updateCausticAnimation(float deltaTime);
+
+    // 添加水下效果相关变量和方法
+    struct UnderwaterParticle {
+        glm::vec3 position;
+        glm::vec3 velocity;
+        float size;
+        float life;
+    };
+    
+    std::vector<UnderwaterParticle> underwaterParticles;
+    GLuint underwaterParticleTexture;
+    
+    void initUnderwaterEffects();
+    void updateUnderwaterParticles(float deltaTime);
+    void renderUnderwaterEffects(const glm::mat4& projection, const glm::mat4& view);
+    void generateUnderwaterParticle(UnderwaterParticle& particle);
 };
 
 #endif // WATER_H

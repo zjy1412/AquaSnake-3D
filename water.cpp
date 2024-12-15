@@ -68,20 +68,49 @@ const char* Water::waterFragmentShader = R"(
     uniform float chromaDispersion;
     uniform float waterDensity;
     uniform float visibilityFalloff;
+    uniform float causticBlend;
+    uniform int causticLayerCount;
     
-    void main()
-    {
-        // 基础菲涅尔效果
-        vec3 viewDir = normalize(-FragPos);
+    struct CausticLayer {
+        float scale;
+        float offset;
+        vec2 direction;
+    };
+    uniform CausticLayer causticLayers[4];  // 最大支持4层
+    
+    vec2 rotateUV(vec2 uv, float angle) {
+        float s = sin(angle);
+    uniform CausticLayer causticLayers[4];  // 最大支持4层
+    
+    vec2 rotateUV(vec2 uv, float angle) {
+        float s = sin(angle);
+        float c = cos(angle);
+        mat2 rot = mat2(c, -s, s, c);
+        return rot * (uv - 0.5) + 0.5;
+    }
+    
+    float sampleCaustics(vec2 uv) {
+        float caustic = 0.0;
+        
+        for(int i = 0; i < causticLayerCount; i++) {
+            vec2 rotatedUV = rotateUV(uv * causticLayers[i].scale, 
+                                    causticLayers[i].offset);
+            float layer = texture(causticTex, rotatedUV + 
+                                causticLayers[i].direction * time).r;
+            caustic += layer * (1.0 - float(i) * 0.2);
+        }
+        
+        return caustic * causticBlend;
+    }
+        float fresnel = pow(1.0 - max(dot(Normal, viewDir), 0.0), 5.0) * surfaceRoughness;
+        
+        // 水深度混合
+        float depth = gl_FragCoord.z / gl_FragCoord.w;
         float fresnel = pow(1.0 - max(dot(Normal, viewDir), 0.0), 5.0) * surfaceRoughness;
         
         // 水深度混合
         float depth = gl_FragCoord.z / gl_FragCoord.w;
         float depthFactor = clamp(depth / 1000.0, 0.0, 1.0);
-        
-        // 颜色混合
-        vec3 waterColor = mix(shallowColor, deepColor, depthFactor);
-        
         // 扭曲UV坐标用于焦散效果
         vec2 distortedUV = TexCoord + vec2(
             sin(TexCoord.y * 10.0 + time) * distortionStrength,
@@ -89,7 +118,7 @@ const char* Water::waterFragmentShader = R"(
         );
         
         // 焦散效果
-        float caustic = texture(causticTex, distortedUV * 5.0 + time * 0.1).r;
+        float caustic = sampleCaustics(distortedUV);
         waterColor += caustic * causticIntensity * (1.0 - depthFactor);
         
         // 添加色散效果
@@ -135,10 +164,46 @@ void Water::init() {
     initCausticTexture();
     initVolumetricLight();
     createBubbleTexture();  // 添加这行，确保在使用前创建气泡纹理
+    initUnderwaterEffects();
     
     // 初始化一些气泡
     for(int i = 0; i < MAX_BUBBLES; ++i) {  // 改为生成所有气泡
         spawnBubble();
+    }
+}
+
+void Water::initUnderwaterEffects() {
+    // 创建水下粒子纹理
+    const int texSize = 32;
+    std::vector<unsigned char> texData(texSize * texSize * 4);
+    
+    for(int y = 0; y < texSize; ++y) {
+        for(int x = 0; x < texSize; ++x) {
+            float dx = (x - texSize/2.0f) / (texSize/2.0f);
+            float dy = (y - texSize/2.0f) / (texSize/2.0f);
+            float dist = std::sqrt(dx*dx + dy*dy);
+            
+            float alpha = std::max(0.0f, 1.0f - dist);
+            alpha = std::pow(alpha, 2.0f);  // 使边缘更柔和
+            
+            int idx = (y * texSize + x) * 4;
+            texData[idx + 0] = 255;  // R
+            texData[idx + 1] = 255;  // G
+            texData[idx + 2] = 255;  // B
+            texData[idx + 3] = static_cast<unsigned char>(alpha * 255);
+        }
+    }
+    
+    glGenTextures(1, &underwaterParticleTexture);
+    glBindTexture(GL_TEXTURE_2D, underwaterParticleTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texSize, texSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, texData.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    
+    // 初始化水下粒子
+    underwaterParticles.resize(static_cast<size_t>(waterParams.underwaterParticleDensity));
+    for(auto& particle : underwaterParticles) {
+        generateUnderwaterParticle(particle);
     }
 }
 
@@ -192,26 +257,67 @@ void Water::createWaterSurface() {
 }
 
 void Water::initCausticTexture() {
-    // 生成一个简单的焦散纹理（这里用一个临时的方案）
-    const int texSize = 256;
-    std::vector<unsigned char> texData(texSize * texSize);
+    causticLayers.clear();
     
+    // 初始化多层焦散
+    for(int i = 0; i < waterParams.causticLayers; ++i) {
+        CausticLayer layer;
+        layer.scale = 1.0f + i * 0.5f;  // 每层缩放不同
+        layer.speed = waterParams.causticSpeed * (1.0f + i * 0.2f);
+        layer.offset = (float)i * 1.23f; // 错开相位
+        layer.direction = glm::vec2(
+            cos(glm::radians(45.0f + i * 30.0f)),
+            sin(glm::radians(45.0f + i * 30.0f))
+        );
+        causticLayers.push_back(layer);
+    }
+
+    generateCausticTexture();
+}
+
+void Water::generateCausticTexture() {
+    const int texSize = 512; // 增加纹理分辨率
+    std::vector<float> texData(texSize * texSize);
+    
+    // 生成基于Voronoi图案的焦散纹理
     for(int y = 0; y < texSize; ++y) {
         for(int x = 0; x < texSize; ++x) {
-            float fx = (float)x / texSize * 6.28318f;
-            float fy = (float)y / texSize * 6.28318f;
-            float val = (sin(fx * 3) + sin(fy * 4)) * 0.5f + 0.5f;
-            texData[y * texSize + x] = (unsigned char)(val * 255);
+            float fx = (float)x / texSize;
+            float fy = (float)y / texSize;
+            float value = 0.0f;
+            
+            // 生成多层Voronoi
+            for(const auto& layer : causticLayers) {
+                glm::vec2 pos(fx * layer.scale, fy * layer.scale);
+                
+                // 计算最近的特征点距离
+                float minDist = 1.0f;
+                for(int i = 0; i < 4; ++i) {
+                    glm::vec2 cellPos(
+                        floor(pos.x) + float(rand()) / RAND_MAX,
+                        floor(pos.y) + float(rand()) / RAND_MAX
+                    );
+                    float dist = glm::length(pos - cellPos);
+                    minDist = glm::min(minDist, dist);
+                }
+                
+                // 添加基于距离的光强变化
+                value += glm::smoothstep(0.2f, 0.0f, minDist) * 
+                        waterParams.causticBlend / layer.scale;
+            }
+            
+            texData[y * texSize + x] = glm::clamp(value, 0.0f, 1.0f);
         }
     }
     
-    glGenTextures(1, &causticTexture);
+    // 更新纹理
     glBindTexture(GL_TEXTURE_2D, causticTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, texSize, texSize, 0, GL_RED, GL_UNSIGNED_BYTE, texData.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, texSize, texSize, 0, GL_RED, GL_FLOAT, texData.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glGenerateMipmap(GL_TEXTURE_2D);
 }
 
 void Water::initVolumetricLight() {
@@ -247,7 +353,7 @@ void Water::render(const glm::mat4& projection, const glm::mat4& view) {
     GLint colorLoc = glGetUniformLocation(waterProgram, "waterColor");
     GLint alphaLoc = glGetUniformLocation(waterProgram, "alpha");
 
-    // 修正uniform设置方式
+    // 修���uniform设置方式
     glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
     glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
     glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
@@ -349,6 +455,46 @@ void Water::render(const glm::mat4& projection, const glm::mat4& view) {
     
     // 在水体渲染后渲染气泡
     renderBubbles();
+    renderUnderwaterEffects(projection, view);
+}
+
+void Water::renderUnderwaterEffects(const glm::mat4& projection, const glm::mat4& view) {
+    if(cameraPos.y < 0) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+        glDepthMask(GL_FALSE);
+        
+        float depth = -cameraPos.y;
+        float depthFactor = depth / size;
+        
+        // 增强水下光束效果
+        float godrayIntensity = waterParams.underwaterGodrayIntensity * 
+                               exp(-depth * waterParams.underwaterScatteringDensity * 0.5f);
+        
+        // 渲染更多的水下粒子
+        glBindTexture(GL_TEXTURE_2D, underwaterParticleTexture);
+        glPointSize(5.0f);  // 增大粒子尺寸
+        
+        glBegin(GL_POINTS);
+        for(const auto& particle : underwaterParticles) {
+            float distToCamera = glm::length(particle.position - cameraPos);
+            float visibility = exp(-distToCamera * waterParams.underwaterScatteringDensity);
+            
+            // 增强粒子颜色和透明度
+            glColor4f(
+                waterParams.underwaterColor.r + 0.2f,
+                waterParams.underwaterColor.g + 0.2f,
+                waterParams.underwaterColor.b + 0.2f,
+                particle.life * visibility * 0.5f  // 增加透明度
+            );
+            
+            glVertex3fv(glm::value_ptr(particle.position));
+        }
+        glEnd();
+        
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+    }
 }
 
 void Water::update(float deltaTime) {
@@ -378,6 +524,56 @@ void Water::update(float deltaTime) {
     while(bubbles.size() < MAX_BUBBLES) {
         spawnBubble();
     }
+    updateCausticAnimation(deltaTime);
+    updateUnderwaterParticles(deltaTime);
+    
+    // 确保在每帧更新水下效果参数
+    glUseProgram(waterProgram);
+    
+    // 更新相机位置
+    glUniform3fv(glGetUniformLocation(waterProgram, "cameraPosition"), 1,
+                 glm::value_ptr(cameraPos));
+                 
+    // 根据深度更新散射密度
+    if(cameraPos.y < 0.0f) {
+        float depth = -cameraPos.y;
+        float adjustedDensity = waterParams.underwaterScatteringDensity * 
+                               (1.0f + depth * 0.01f);  // 随深度增加散射
+        glUniform1f(glGetUniformLocation(waterProgram, "underwaterScatteringDensity"), 
+                   adjustedDensity);
+    }
+    
+    glUseProgram(0);
+}
+
+void Water::updateUnderwaterParticles(float deltaTime) {
+    for(auto& particle : underwaterParticles) {
+        particle.position += particle.velocity * deltaTime;
+        particle.life -= deltaTime * 0.2f;
+        
+        if(particle.life <= 0) {
+            generateUnderwaterParticle(particle);
+        }
+    }
+}
+
+void Water::generateUnderwaterParticle(UnderwaterParticle& particle) {
+    float range = size * 0.8f;
+    particle.position = glm::vec3(
+        (float(rand()) / RAND_MAX * 2.0f - 1.0f) * range,
+        -range + float(rand()) / RAND_MAX * range * 2.0f,
+        (float(rand()) / RAND_MAX * 2.0f - 1.0f) * range
+    );
+    
+    // 给予缓慢的随机运动
+    particle.velocity = glm::vec3(
+        (float(rand()) / RAND_MAX - 0.5f) * 2.0f,
+        (float(rand()) / RAND_MAX - 0.3f) * 1.0f,
+        (float(rand()) / RAND_MAX - 0.5f) * 2.0f
+    ) * 10.0f;
+    
+    particle.size = 2.0f + float(rand()) / RAND_MAX * 4.0f;
+    particle.life = 0.5f + float(rand()) / RAND_MAX * 0.5f;
 }
 
 int Water::width() const {
@@ -461,7 +657,7 @@ void Water::initWaterNormalTexture() {
 
 void Water::createBubbleTexture() {
     const int texSize = 64;  // 纹理尺寸
-    std::vector<unsigned char> texData(texSize * texSize * 4);  // RGBA格式
+    std::vector<unsigned char> texData(texSize * texSize * 4);  // RGBA��式
     
     float center = texSize / 2.0f;
     float maxDist = center * 0.9f;
@@ -515,6 +711,35 @@ void Water::updateCaustics()
 {
     causticTime += 0.016f;
     // TODO: 更新焦散效果
+}
+
+void Water::updateCausticAnimation(float deltaTime) {
+    // 更新每层的偏移
+    for(auto& layer : causticLayers) {
+        layer.offset += layer.speed * deltaTime;
+        if(layer.offset > 2.0f * glm::pi<float>()) {
+            layer.offset -= 2.0f * glm::pi<float>();
+        }
+    }
+
+    // 更新着色器中的焦散参数
+    glUseProgram(waterProgram);
+    
+    // 传递焦散动画参数到着色器
+    for(int i = 0; i < causticLayers.size(); ++i) {
+        std::string prefix = "causticLayers[" + std::to_string(i) + "].";
+        glUniform1f(glGetUniformLocation(waterProgram, (prefix + "scale").c_str()), 
+                   causticLayers[i].scale * waterParams.causticScale);
+        glUniform1f(glGetUniformLocation(waterProgram, (prefix + "offset").c_str()), 
+                   causticLayers[i].offset);
+        glUniform2fv(glGetUniformLocation(waterProgram, (prefix + "direction").c_str()),
+                    1, glm::value_ptr(causticLayers[i].direction));
+    }
+    
+    glUniform1i(glGetUniformLocation(waterProgram, "causticLayerCount"), 
+                waterParams.causticLayers);
+    glUniform1f(glGetUniformLocation(waterProgram, "causticBlend"), 
+                waterParams.causticBlend);
 }
 
 void Water::updateBubbles()
@@ -617,7 +842,7 @@ void Water::spawnBubble() {
     float spawnRange = size * 0.95f;
     bubble.position = glm::vec3(
         (float(rand())/RAND_MAX * 2.0f - 1.0f) * spawnRange,
-        -size + float(rand())/RAND_MAX * size * 2.0f,  // 在整个高度范围内生成
+        -size + float(rand())/RAND_MAX * size * 2.0f,  // 在整个高度范围内生���
         (float(rand())/RAND_MAX * 2.0f - 1.0f) * spawnRange
     );
     

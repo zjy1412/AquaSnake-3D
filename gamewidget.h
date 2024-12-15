@@ -58,7 +58,7 @@ private:
     void drawWater();
     float cameraAngle;    // 添加相机角度
     const float CAMERA_DEFAULT_ANGLE = -30.0f;  // 减小俯视角
-    const float DEFAULT_CAMERA_DISTANCE = -15.0f; // 增加相机距离
+    const float DEFAULT_CAMERA_DISTANCE = -15.0f; // 墛大相机距离
     const float DEFAULT_CAMERA_HEIGHT = 10.0f;    // 墛大相机高度
     const float AQUARIUM_DEFAULT_SIZE = 2000.0f;   // 墛大水族箱尺寸到2000
     const float SEGMENT_SIZE = 50.0f;  // 添加这行，用于检测碰撞
@@ -184,11 +184,47 @@ private:
 
     // 添加水下效果相关参数
     struct UnderwaterEffects {
-        float dispersionStrength = 0.02f;    // 色散强度
-        float visibilityRange = 800.0f;      // 可见范围
-        float fogDensity = 0.001f;           // 水雾密度
-        glm::vec3 fogColor = glm::vec3(0.1f, 0.2f, 0.3f); // 水雾颜色
+        float dispersionStrength = 0.02f;    
+        float visibilityRange = 800.0f;      
+        float fogDensity = 0.001f;           
+        glm::vec3 fogColor = glm::vec3(0.1f, 0.2f, 0.3f);
+        float minAmbientLight = 0.4f;        // 增加最小环境光强度
+        float maxAmbientLight = 0.8f;        // 墛大最大环境光强度
+        float lightStability = 0.98f;        // 墛大光照稳定性
+        float depthDarkening = 0.0002f;      // 降低深度衰减系数
+        float currentLight = 0.5f;           // 初始值设为中等亮度
     } underwaterEffects;
+
+    // 添加光源相关结构体和变量
+    struct LightSource {
+        glm::vec3 position;
+        glm::vec3 direction;
+        glm::vec3 color;
+        float intensity;
+        float radius;        // 对点光源有效
+        float attenuation;   // 衰减系数
+    };
+
+    // 光源数组
+    std::vector<LightSource> lightSources;
+    
+    // 光照参数
+    struct LightingParams {
+        float sunlightIntensity = 1.0f;
+        float ambientIntensity = 0.3f;
+        float volumetricIntensity = 0.5f;
+        float causticLightIntensity = 0.4f;
+        float waterScattering = 0.2f;
+        glm::vec3 waterAbsorption = glm::vec3(0.2f, 0.1f, 0.3f); // RGB衰减
+    } lightingParams;
+
+    void initLights();
+    void updateLights();
+    
+    // 添加新的私有函数声明
+    void applyUnderwaterState();
+    void drawSceneObjects();
+    void drawReferenceLines();
 };
 
 #endif // GAMEWIDGET_H
