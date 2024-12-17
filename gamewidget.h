@@ -1,19 +1,19 @@
 #ifndef GAMEWIDGET_H
 #define GAMEWIDGET_H
 
-#define GLM_ENABLE_EXPERIMENTAL  // 添加这行启用实验性特性
+#define GLM_ENABLE_EXPERIMENTAL  // 添加这行到最前面
 
-#include <GL/glew.h>  // 确保GLEW最先包含
+#include <GL/glew.h> 
 #include <QOpenGLWidget>
 #include <QOpenGLFunctions>
 #include <QTimer>
-#include <glm/glm.hpp>  // 确保能找到这个路径
+#include <glm/glm.hpp>  
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>  // 添加这行在头文件顶部的其他includes中
+#include <glm/gtc/type_ptr.hpp>  
 #include "snake.h"
 #include "obstacle.h"
 #include "food.h"
-#include "water.h"  // 添加水体类头文件包含
+#include "water.h"  
 
 class GameWidget : public QOpenGLWidget, protected QOpenGLFunctions
 {
@@ -36,7 +36,7 @@ private:
     void updateGame();
     void spawnFood();
     void updateCamera();     // 更新摄像机位置
-    bool isInAquarium(const glm::vec3& pos) const;  // 改为使用 glm::vec3
+    bool isInAquarium(const glm::vec3& pos) const;  
 
     QTimer* gameTimer;
     float rotationAngle;
@@ -57,15 +57,15 @@ private:
     void initWaterEffect();
     void drawWater();
     float cameraAngle;    // 添加相机角度
-    const float CAMERA_DEFAULT_ANGLE = -30.0f;  // 减小俯视角
-    const float DEFAULT_CAMERA_DISTANCE = -15.0f; // 墛大相机距离
-    const float DEFAULT_CAMERA_HEIGHT = 10.0f;    // 墛大相机高度
-    const float AQUARIUM_DEFAULT_SIZE = 2000.0f;   // 墛大水族箱尺寸到2000
-    const float SEGMENT_SIZE = 50.0f;  // 添加这行，用于检测碰撞
-    const float MIN_FOOD_DISTANCE = 200.0f;         // 食物最小间距
-    const int MAX_OBSTACLES = 50;                  // 最大障碍物数量
-    const int MIN_FOOD_COUNT = 50;                 // 场景中最少食物数量
-    std::vector<Food> foods;         // 改为存储多���食物位置
+    const float CAMERA_DEFAULT_ANGLE = -30.0f;  
+    const float DEFAULT_CAMERA_DISTANCE = -20.0f; // 减小相机距离从-50改为-20
+    const float DEFAULT_CAMERA_HEIGHT = 15.0f;    // 降低相机高度从30改为15
+    const float AQUARIUM_DEFAULT_SIZE = 5000.0f;   // 墛大水族箱尺寸到2000
+    const float SEGMENT_SIZE = 100.0f;  // 添加这行，用于检测碰撞
+    const float MIN_FOOD_DISTANCE = 400.0f;         // 食物最小间距
+    const int MAX_OBSTACLES = 100;                  // 最大障碍物数量
+    const int MIN_FOOD_COUNT = 100;                 // 场景中最少食物数量
+    std::vector<Food> foods;         // 改为存储多个食物位置
 
     enum class GameState {
         READY = 0,
@@ -101,14 +101,14 @@ private:
     
     // 统一的相机设置，不再分不同模式
     const CameraSettings CAMERA_SETTINGS {
-        600.0f,  // 基础距离 - 墛大以看到更多内容
-        400.0f,  // 最小高度 - 提高基础高度
-        800.0f,  // 最大高度 - 墛大最大高度
-        60.0f,   // 基础FOV - 墛大基础视野
-        75.0f,   // 最大FOV - 墛大最大视野
-        0.05f,   // 平滑因子
-        0.15f,   // 旋转速度
-        0.08f    // 旋转平滑度
+        800.0f,    // 减小基础距离从2000改为800
+        400.0f,    // 减小最小高度从1000改为400
+        800.0f,    // 减小最大高度从2000改为800
+        90.0f,    // 墛大基础FOV角度
+        120.0f,   // 墛大最大FOV角度
+        0.05f,    // 保持平滑因子
+        0.15f,    // 保持旋转速度
+        0.08f     // 保持旋转平滑度
     };
     
     // 相机行为参数
@@ -127,26 +127,12 @@ private:
 
     // 相机位置偏移参数
     static constexpr float SIDE_OFFSET_FACTOR = 0.3f;   // 相机侧向偏移因子
-    static constexpr float FORWARD_OFFSET = 300.0f;     // 前方观察点偏移
+    static constexpr float FORWARD_OFFSET = 600.0f;     // 前方观察点偏移
 
     // 相机旋转插值参数
     glm::quat currentCameraRotation;    // 当前相机旋转
     glm::quat targetCameraRotation;     // 目标相机旋转 
     float rotationSmoothFactor;         // 旋转平滑因子
-
-    // 水体相关
-    // 删除这些重复的定义
-    // struct WaterParams {...} waterParams;  // 删除，使用 water->getParams()
-    // GLuint waterProgram;      // 删除
-    // GLuint waterVAO;         // 删除
-    // GLuint waterVBO;         // 删除
-    // GLuint waterTexture;     // 删除
-    // float waterTime;         // 删除
-    
-    // 删除这些重复的函数声明
-    // void initCausticTexture();
-    // void initVolumetricLight();
-    // void updateBubbles();
 
     // 保留必要的水体相关变量
     Water* water;  
@@ -176,11 +162,11 @@ private:
     void initCausticTexture();         // 初始化焦散纹理
     void updateCaustics();             // 更新焦散效果
     void updateBubbles();              // 更新气泡
-    void renderBubbles();              // 渲染气泡
-
+    
     // 添加新的函数声明
     void updateUnderwaterEffects();
     void renderUnderwaterEffects();
+    void applyLightSettings();
 
     // 添加水下效果相关参数
     struct UnderwaterEffects {
@@ -197,12 +183,17 @@ private:
 
     // 添加光源相关结构体和变量
     struct LightSource {
-        glm::vec3 position;
-        glm::vec3 direction;
-        glm::vec3 color;
-        float intensity;
-        float radius;        // 对点光源有效
-        float attenuation;   // 衰减系数
+        glm::vec3 position;      // 光源位置
+        glm::vec3 direction;     // 光源方向（仅用于方向光）
+        glm::vec3 color;        // 光源颜色
+        float intensity;        // 光源强度
+        float radius;          // 点光源的影响范围（0表示方向光）
+        float attenuation;     // 衰减系数
+        
+        // 添加新的参数
+        bool castShadows;      // 是否投射阴影
+        float spotCutoff;      // 聚光灯角度（若适用）
+        float spotExponent;    // 聚光灯衰减指数（若适用）
     };
 
     // 光源数组
@@ -210,12 +201,12 @@ private:
     
     // 光照参数
     struct LightingParams {
-        float sunlightIntensity = 1.0f;
-        float ambientIntensity = 0.3f;
-        float volumetricIntensity = 0.5f;
-        float causticLightIntensity = 0.4f;
-        float waterScattering = 0.2f;
-        glm::vec3 waterAbsorption = glm::vec3(0.2f, 0.1f, 0.3f); // RGB衰减
+        float sunlightIntensity = 2.0f;           // 增强太阳光强度
+        float ambientIntensity = 0.4f;            // 提高环境光
+        float volumetricIntensity = 0.8f;         // 增强体积光
+        float causticLightIntensity = 0.6f;       // 增强焦散
+        float waterScattering = 0.3f;             // 增加水体散射
+        glm::vec3 waterAbsorption = glm::vec3(0.15f, 0.08f, 0.25f); // 调整水体吸收
     } lightingParams;
 
     void initLights();
@@ -224,7 +215,6 @@ private:
     // 添加新的私有函数声明
     void applyUnderwaterState();
     void drawSceneObjects();
-    void drawReferenceLines();
 };
 
 #endif // GAMEWIDGET_H

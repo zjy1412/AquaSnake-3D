@@ -1,13 +1,13 @@
+#define GLM_ENABLE_EXPERIMENTAL
 #include "gamewidget.h"
 #include <QKeyEvent>
-#include <chrono>  // 使用chrono代替QTime
+#include <chrono> 
 #include <glm/gtc/type_ptr.hpp>
 #include <GL/glew.h>
 #include "food.h"
 #include <QDebug>
-#include <QTime>  // 添加这行
+#include <QTime> 
 
-// 在头文件定义常量，删除这里的类定义
 static constexpr int INVINCIBLE_FRAMES_AFTER_FOOD = 20;    // 吃到食物后的无敌帧数
 static constexpr float FOOD_COLLISION_MULTIPLIER = 2.5f;   // 食物碰撞范围倍数
 static constexpr float OBSTACLE_COLLISION_MULTIPLIER = 0.7f; // 障碍物碰撞范围倍数
@@ -94,7 +94,7 @@ GameWidget::~GameWidget()
 {
     makeCurrent();
     
-    delete water;  // 删除水体对象
+    delete water;  
     
     // 清理纹理和FBO
     if(causticTexture) glDeleteTextures(1, &causticTexture);
@@ -110,64 +110,81 @@ GameWidget::~GameWidget()
 // 简化初始化，确保能看到场景
 void GameWidget::initializeGL()
 {
+    // 首先���始化OpenGL函数
     initializeOpenGLFunctions();
     glewInit();
+
+    // 然后初始化蛇的OpenGL函数
+    if(snake) {
+        snake->initializeGL();
+    }
     
-    glClearColor(0.2f, 0.2f, 0.2f, 1.0f);  // 更暗的背景色
+    // 初始化水体的OpenGL函数
+    if(water) {
+        water->initializeGL();
+    }
+    
+    glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
     glEnable(GL_DEPTH_TEST);
-    glEnable(GL_LIGHTING);
-    glEnable(GL_LIGHT0);
     glEnable(GL_COLOR_MATERIAL);
     
-    // 设置光照参数
-    GLfloat ambient[] = { 0.2f, 0.2f, 0.2f, 1.0f };
-    GLfloat diffuse[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-    GLfloat position[] = { 0.0f, 20.0f, 0.0f, 1.0f };
-    glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
-    glLightfv(GL_LIGHT0, GL_POSITION, position);
+    // 设置全局光照模型
+    glEnable(GL_LIGHTING);
+    glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
+    glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE);
+    
+    GLfloat globalAmbient[] = { 0.4f, 0.4f, 0.4f, 1.0f };
+    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, globalAmbient);
 
     // 初始化各个组件
     initObstacles();
     spawnFood();
     
-    // 设置初始相��位置
-    cameraPos = glm::vec3(0.0f, 25.0f, 35.0f);  // 拉远初始视角
+    // 设置初始相机位置
+    cameraPos = glm::vec3(0.0f, 25.0f, 35.0f);
     cameraTarget = glm::vec3(0.0f);
     viewMatrix = glm::lookAt(cameraPos, cameraTarget, glm::vec3(0.0f, 1.0f, 0.0f));
 
-    // 初始化水体时使用实际的水族箱尺寸
+    // 初始化水体
     water = new Water(aquariumSize);
     water->init();
     
-    // 禁用默认光源
-    glDisable(GL_LIGHT0);
-    
-    // 启用更多光源
-    glEnable(GL_LIGHTING);
-    for(int i = 0; i < 8; ++i) {  // OpenGL支持最多8个光源
-        glEnable(GL_LIGHT0 + i);
-    }
-    
+    // 初始化光源系统
     initLights();
     
-    // 修改光照初始化
-    glEnable(GL_LIGHTING);
-    
-    // 先禁用所有光源
-    for(int i = 0; i < GL_MAX_LIGHTS; i++) {
-        glDisable(GL_LIGHT0 + i);
+    // 检查水体初始化状态
+    if (!water) {
+        qDebug() << "Warning: Water not initialized";
+        return;
     }
     
-    // 设置全局光照模型
-    glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
-    glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE);
+    // 验证水体纹理是否创建成功
+    GLuint waterTextures[] = {
+        water->getCausticTexture(),
+        water->getVolumetricLightTexture(),
+        water->getWaterNormalTexture(),
+        water->getBubbleTexture()
+    };
     
-    GLfloat globalAmbient[] = { 0.3f, 0.3f, 0.3f, 1.0f };
-    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, globalAmbient);
+    for(GLuint tex : waterTextures) {
+        if(tex == 0) {
+            qDebug() << "Warning: Water texture not created properly";
+        }
+    }
     
-    // 初始化光源
-    initLights();
+    qDebug() << "=== OpenGL Initialization ===";
+    qDebug() << "Vendor:" << (const char*)glGetString(GL_VENDOR);
+    qDebug() << "Renderer:" << (const char*)glGetString(GL_RENDERER);
+    qDebug() << "Version:" << (const char*)glGetString(GL_VERSION);
+    
+    GLint maxLights;
+    glGetIntegerv(GL_MAX_LIGHTS, &maxLights);
+    qDebug() << "Maximum lights supported:" << maxLights;
+    
+    // 验证光照初始化
+    GLboolean lightingEnabled;
+    glGetBooleanv(GL_LIGHTING, &lightingEnabled);
+    qDebug() << "Initial GL_LIGHTING state:" << (lightingEnabled ? "true" : "false");
 }
 
 void GameWidget::resizeGL(int w, int h)
@@ -175,12 +192,12 @@ void GameWidget::resizeGL(int w, int h)
     glViewport(0, 0, w, h);
     float aspect = float(w) / float(h);
     
-    // 调整近平面和远平面，确保能看到整个场景
+    // 修改投影矩阵参数，增加远平面距离
     projectionMatrix = glm::perspective(
-        glm::radians(45.0f),  // 减小FOV角度，使视野更集中
+        glm::radians(90.0f),  // 增大FOV角度
         aspect,
-        0.1f,                // 近平面
-        1000.0f              // 远平面
+        1.0f,                 // 减小近平面距离
+        10000.0f              // 大幅增加远平面距离
     );
     
     glMatrixMode(GL_PROJECTION);
@@ -189,122 +206,97 @@ void GameWidget::resizeGL(int w, int h)
 }
 
 // 打印蛇头位置和相机位置（用于调试）
-void GameWidget::paintGL()
-{
+void GameWidget::paintGL() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     
-    // 在渲染开始时保存OpenGL状态
-    glPushAttrib(GL_ALL_ATTRIB_BITS);
+    // 确保基本状态设置正确
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_LIGHTING);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
-    // 设置基础渲染状态
+    // 更新光照
+    updateLights();
+    
+    // 设置变换矩阵
     glMatrixMode(GL_PROJECTION);
     glLoadMatrixf(glm::value_ptr(projectionMatrix));
     glMatrixMode(GL_MODELVIEW);
     glLoadMatrixf(glm::value_ptr(viewMatrix));
-
-    // 更新水下效果状态
-    updateUnderwaterEffects();
     
-    // 应用水下效果（如果在水中）
-    if(isInAquarium(cameraPos)) {
-        applyUnderwaterState();
-    }
-
-    // 绘制场景内容
+    // 1. 绘制水族箱
     drawAquarium();
-    drawSceneObjects();  // 新函数，包含所有场景对象的绘制
     
-    // 渲染水体
+    // 2. 绘制场景对象（蛇、食物、障碍物）
+    drawSceneObjects();
+    
+    // 3. 如果水体存在，渲染水体效果
     if(water) {
-        water->setCameraPosition(cameraPos);
+        // 保存当前状态
+        glPushAttrib(GL_ALL_ATTRIB_BITS);
+        
+        // 渲染水体
         water->render(projectionMatrix, viewMatrix);
+        
+        // 恢复状态
+        glPopAttrib();
     }
-
-    // 恢复OpenGL状态
-    glPopAttrib();
+    
+    // 确保所有渲染完成
     glFlush();
-    
-    // 在绘制场景之前更新光源
-    updateLights();
-    
-    // 确保启用正确的OpenGL状态
-    glEnable(GL_LIGHTING);
-    glEnable(GL_COLOR_MATERIAL);
-    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
 }
 
-// 新增函数：统一管理场景对象的绘制
+// 统一管理场景对象的绘制
 void GameWidget::drawSceneObjects()
 {
-    // 绘制参考线
-    drawReferenceLines();
+    // 保存当前状态
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
+    glPushMatrix();
+    
+    // 重新确保光照启用
+    glEnable(GL_LIGHTING);
+    glEnable(GL_COLOR_MATERIAL);
     
     // 绘制障碍物
     for(const auto& obstacle : obstacles) {
+        // 设置物体材质
+        glColor4f(0.6f, 0.6f, 0.6f, 1.0f);  // 基础颜色
+        GLfloat matSpecular[] = { 0.8f, 0.8f, 0.8f, 1.0f };
+        glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, matSpecular);
+        glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 32.0f);
+        
         obstacle.draw();
-    }
-    
-    // 绘制蛇
-    if(snake) {
-        glColor3f(1.0f, 1.0f, 1.0f);
-        snake->draw();
     }
 
     // 绘制食物
     for(const auto& food : foods) {
+        // 设置物材质
+        glColor4f(1.0f, 0.5f, 0.0f, 1.0f);  // 橙色基础颜色
+        GLfloat foodSpecular[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+        glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, foodSpecular);
+        glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 64.0f);
+        
         food.draw();
     }
-}
-
-// 新增函数：应用水下状态
-void GameWidget::applyUnderwaterState()
-{
-    // 启用雾效果
-    glEnable(GL_FOG);
-    glFogi(GL_FOG_MODE, GL_EXP2);
     
-    // 设置雾参数
-    GLfloat fogColor[] = {
-        underwaterEffects.fogColor.r,
-        underwaterEffects.fogColor.g,
-        underwaterEffects.fogColor.b,
-        1.0f
-    };
-    glFogfv(GL_FOG_COLOR, fogColor);
-    glFogf(GL_FOG_DENSITY, underwaterEffects.fogDensity);
+    // 绘制蛇
+    if(snake) {
+        // 设置蛇的材质
+        glColor4f(0.2f, 0.8f, 0.2f, 1.0f);  // 绿色基础颜色
+        GLfloat snakeSpecular[] = { 0.6f, 0.8f, 0.6f, 1.0f };
+        glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, snakeSpecular);
+        glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 48.0f);
+        
+        snake->draw();
+    }
     
-    // 设置环境光
-    GLfloat ambient[] = {
-        underwaterEffects.currentLight,
-        underwaterEffects.currentLight * 1.1f,
-        underwaterEffects.currentLight * 1.2f,
-        1.0f
-    };
-    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, ambient);
-}
-
-// 添加绘制参考线函数的实现
-void GameWidget::drawReferenceLines()
-{
-    glBegin(GL_LINES);
-    // X轴 - 红色
-    glColor3f(1.0f, 0.0f, 0.0f);
-    glVertex3f(0.0f, 0.0f, 0.0f);
-    glVertex3f(aquariumSize, 0.0f, 0.0f);
-    // Y轴 - 绿色
-    glColor3f(0.0f, 1.0f, 0.0f);
-    glVertex3f(0.0f, 0.0f, 0.0f);
-    glVertex3f(0.0f, aquariumSize, 0.0f);
-    // Z轴 - 蓝色
-    glColor3f(0.0f, 0.0f, 1.0f);
-    glVertex3f(0.0f, 0.0f, 0.0f);
-    glVertex3f(0.0f, 0.0f, aquariumSize);
-    glEnd();
+    // 恢复状态
+    glPopMatrix();
+    glPopAttrib();
 }
 
 void GameWidget::keyPressEvent(QKeyEvent *event)
 {
-    // R键重置游戏 - 这个检查应该放在最前面，无论游戏状态如何都可以重置
     if (event->key() == Qt::Key_R) {
         qDebug() << "Resetting game via R key";
         resetGame();
@@ -313,28 +305,24 @@ void GameWidget::keyPressEvent(QKeyEvent *event)
 
     if(gameState != GameState::PLAYING || !snake) return;
 
-    const float ROTATION_ANGLE = glm::radians(90.0f);  // 90度旋转
+    const float ROTATION_ANGLE = glm::radians(90.0f);
     glm::vec3 currentDir = snake->getDirection();
     glm::vec3 currentUp = snake->getUpDirection();
     glm::vec3 currentRight = snake->getRightDirection();
 
     switch(event->key()) {
-        case Qt::Key_W: {
+        case Qt::Key_W:
             snake->rotateAroundAxis(currentRight, ROTATION_ANGLE);
             break;
-        }
-        case Qt::Key_S: {
+        case Qt::Key_S:
             snake->rotateAroundAxis(currentRight, -ROTATION_ANGLE);
             break;
-        }
-        case Qt::Key_A: {
+        case Qt::Key_A:
             snake->rotateAroundAxis(currentUp, ROTATION_ANGLE);
             break;
-        }
-        case Qt::Key_D: {
+        case Qt::Key_D:
             snake->rotateAroundAxis(currentUp, -ROTATION_ANGLE);
             break;
-        }
     }
 }
 
@@ -361,7 +349,7 @@ void GameWidget::updateGame()
     bool foodEaten = false;
     std::vector<size_t> foodToRemove;
     
-    // 首先检查所有需要移除的食物
+    // 先检查所有需要移除的食物
     for(size_t i = 0; i < foods.size(); ++i) {
         float collisionDistance = snake->getSegmentSize() * FOOD_COLLISION_MULTIPLIER;
         float distance = glm::distance(snake->getHeadPosition(), foods[i].getPosition());
@@ -377,7 +365,7 @@ void GameWidget::updateGame()
     if(foodEaten) {
         score += 10 * foodToRemove.size();
         
-        // 从后向前移除食物，避免索引���效
+        // 从后向前移除食物
         for(auto it = foodToRemove.rbegin(); it != foodToRemove.rend(); ++it) {
             if(*it < foods.size()) {
                 foods.erase(foods.begin() + *it);
@@ -406,7 +394,6 @@ void GameWidget::updateGame()
     // 更新水体，使用正确的deltaTime
     if (water) {
         water->update(deltaTime);
-        // 注意：所有水体相关的更新都应该在 water 类中进行
     }
     
     update();
@@ -446,8 +433,8 @@ void GameWidget::updateCamera()
     glm::mat4 rotationMatrix = glm::mat4_cast(currentCameraRotation);
     glm::vec3 baseOffset = glm::vec3(
         0.0f,
-        CAMERA_SETTINGS.minHeight,
-        -CAMERA_SETTINGS.distance
+        CAMERA_SETTINGS.minHeight * 0.5f,  // 减小高度偏移
+        -CAMERA_SETTINGS.distance * 0.4f    // 减小距离到原来的0.4倍
     );
     
     // 计算相机位置和观察点
@@ -463,8 +450,9 @@ void GameWidget::updateCamera()
     
     // 计算并平滑过渡到新的观察点
     glm::vec3 idealLookAtPoint = snakeHead 
-        + snakeDir * FORWARD_OFFSET 
-        + snakeUp * (CAMERA_SETTINGS.minHeight * 0.2f);
+        + snakeDir * (FORWARD_OFFSET * 0.5f)  // 减小前方观察点偏移到原来的0.5倍
+        + snakeUp * (CAMERA_SETTINGS.minHeight * 0.1f);  // 减小上方偏移
+    
     cameraTarget = glm::mix(cameraTarget, idealLookAtPoint, CAMERA_SETTINGS.smoothFactor);
 
     // 构建视图矩阵
@@ -474,13 +462,13 @@ void GameWidget::updateCamera()
         glm::vec3(glm::mat4_cast(currentCameraRotation) * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f))
     );
 
-    // 更新投影矩阵
+    // 修改投影矩阵
     float aspect = width() / static_cast<float>(height());
     projectionMatrix = glm::perspective(
         glm::radians(currentFOV),
         aspect,
-        0.1f,
-        3000.0f
+        1.0f,                // 减小近平面距离
+        10000.0f             // 大幅增加远平面距离
     );
 }
 
@@ -675,7 +663,7 @@ void GameWidget::drawAquarium()
         // 动态调整透明度
         float alpha;
         if (!cameraInside) {
-            // 相机在外部时，面向相机的面完全透明
+            // 相机在外部时，面向相���的面完全透明
             alpha = (dotProduct < 0.0f) ? 0.01f : baseAlpha;  // 更低的透明度
         } else {
             // 相机在内部时使用正常透明度
@@ -733,17 +721,6 @@ void GameWidget::drawAquarium()
     glLineWidth(1.0f);
 }
 
-void GameWidget::initShaders()
-{
-    // 暂时空实现，后续添加着色器
-}
-
-void GameWidget::createAquarium()
-{
-    // 暂时空实现，实际绘制在drawAquarium中
-}
-
-// 暂时把障碍物放在地面上
 void GameWidget::initObstacles()
 {
     obstacles.clear();
@@ -767,7 +744,6 @@ void GameWidget::resetGame()
     qDebug() << "=== GAME RESET ===";
     qDebug() << "Previous state:" << static_cast<int>(gameState);
 
-
     // 设置状态（只设置一次）
     gameState = GameState::PLAYING;
     gameOver = false;
@@ -782,15 +758,18 @@ void GameWidget::resetGame()
 
     // 删除旧的蛇并创建新的
     delete snake;
-    snake = new Snake(-5.0f, 0.0f, 0.0f);  // 起始位置靠左一些
-    snake->setDirection(glm::vec3(1.0f, 0.0f, 0.0f));
-
+    snake = new Snake(-5.0f, 0.0f, 0.0f);
+    
+    // 如果OpenGL已初始化，则初始化蛇的OpenGL函数
+    if (context() && context()->isValid()) {
+        snake->initializeGL();
+    }
+    
+    // 如果出界，强制移动到安全位置
     glm::vec3 newPos = snake->getHeadPosition();
     if(!isInAquarium(newPos)) {
         qDebug() << "WARNING: Reset position is out of bounds! Adjusting...";
-        // 如果出界，强制移动到安全位置
         newPos = glm::vec3(0.0f, 0.0f, 0.0f);
-        // 这里需要添加更好的蛇位置的逻辑
     }
 
     // 重置相机位置
@@ -844,384 +823,166 @@ void GameWidget::checkCollisions()
         return;
     }
 }
-void GameWidget::updateUnderwaterEffects()
-{
-    // 始终更新水下效果参数，无论是否在水中
-    float depth = -cameraPos.y;
-    float depthFactor = std::min(1.0f, std::abs(depth) / (aquariumSize * 0.5f));
-    
-    // 计算水面过渡效果
-    float transitionZone = 100.0f;
-    float transitionFactor = 1.0f;
-    
-    if(std::abs(cameraPos.y) < transitionZone) {
-        transitionFactor = std::abs(cameraPos.y) / transitionZone;
-    }
-    
-    // 更新参数
-    static float currentFogDensity = underwaterEffects.fogDensity;
-    static glm::vec3 currentFogColor = underwaterEffects.fogColor;
-    
-    // 使用稳定性参数进行插值
-    currentFogDensity = glm::mix(currentFogDensity, 
-                                0.001f + depthFactor * 0.002f,
-                                1.0f - underwaterEffects.lightStability);
-                                
-    currentFogColor = glm::mix(currentFogColor,
-                              glm::mix(glm::vec3(0.2f, 0.3f, 0.4f),
-                                      glm::vec3(0.1f, 0.15f, 0.25f),
-                                      depthFactor),
-                              1.0f - underwaterEffects.lightStability);
-    
-    // 保存计算结果
-    underwaterEffects.fogDensity = currentFogDensity;
-    underwaterEffects.fogColor = currentFogColor;
-    
-    // 更新光照
-    float baseLight = glm::mix(underwaterEffects.maxAmbientLight,
-                              underwaterEffects.minAmbientLight,
-                              depthFactor * underwaterEffects.depthDarkening);
-                              
-    underwaterEffects.currentLight = glm::mix(underwaterEffects.currentLight,
-                                             baseLight,
-                                             1.0f - underwaterEffects.lightStability);
-}
-
-void GameWidget::renderUnderwaterEffects()
-{
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    
-    // 增强水下雾效果
-    glEnable(GL_FOG);
-    glFogi(GL_FOG_MODE, GL_EXP2);
-    GLfloat fogColor[] = {
-        underwaterEffects.fogColor.r,
-        underwaterEffects.fogColor.g,
-        underwaterEffects.fogColor.b,
-        1.0f
-    };
-    glFogfv(GL_FOG_COLOR, fogColor);
-    glFogf(GL_FOG_DENSITY, underwaterEffects.fogDensity);
-    
-    // 添加更明显的水下色调叠加
-    glDisable(GL_DEPTH_TEST);
-    glMatrixMode(GL_PROJECTION);
-    glPushMatrix();
-    glLoadIdentity();
-    glMatrixMode(GL_MODELVIEW);
-    glPushMatrix();
-    glLoadIdentity();
-    
-    // 使用两个半透明层来增强效果
-    // 第一层：基础水下色调
-    glColor4f(
-        underwaterEffects.fogColor.r,
-        underwaterEffects.fogColor.g,
-        underwaterEffects.fogColor.b,
-        0.3f  // 增加基础透明度
-    );
-    
-    glBegin(GL_QUADS);
-    glVertex2f(-1.0f, -1.0f);
-    glVertex2f( 1.0f, -1.0f);
-    glVertex2f( 1.0f,  1.0f);
-    glVertex2f(-1.0f,  1.0f);
-    glEnd();
-    
-    // 第二层：渐变效果
-    glBegin(GL_QUADS);
-    // 底部更深的颜色
-    glColor4f(0.0f, 0.1f, 0.2f, 0.4f);
-    glVertex2f(-1.0f, -1.0f);
-    glVertex2f( 1.0f, -1.0f);
-    // 顶部较浅的颜色
-    glColor4f(0.1f, 0.3f, 0.5f, 0.0f);
-    glVertex2f( 1.0f,  1.0f);
-    glVertex2f(-1.0f,  1.0f);
-    glEnd();
-    
-    glPopMatrix();
-    glMatrixMode(GL_PROJECTION);
-    glPopMatrix();
-    glMatrixMode(GL_MODELVIEW);
-    
-    glEnable(GL_DEPTH_TEST);
-    glDisable(GL_FOG);
-    glDisable(GL_BLEND);
-
-    if(isInAquarium(cameraPos) && cameraPos.y < 0) {
-        float depth = -cameraPos.y;
-        float depthFactor = std::min(1.0f, depth / (aquariumSize * 0.5f));
-        
-        // 计算稳定的基础亮度
-        float baseLight = glm::mix(
-            underwaterEffects.maxAmbientLight,
-            underwaterEffects.minAmbientLight,
-            depthFactor * underwaterEffects.depthDarkening
-        );
-        
-        // 使用光照稳定性参数来平滑过渡
-        static float currentLight = baseLight;
-        currentLight = glm::mix(currentLight, baseLight, 1.0f - underwaterEffects.lightStability);
-        
-        // 调整环境光
-        GLfloat ambient[] = {
-            currentLight,
-            currentLight * 1.1f,  // 略微偏蓝
-            currentLight * 1.2f,
-            1.0f
-        };
-        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, ambient);
-        
-        // 调整雾效果，使其更加稳定
-        underwaterEffects.fogDensity = 0.001f + depthFactor * 0.002f;
-        underwaterEffects.fogColor = glm::mix(
-            glm::vec3(0.2f, 0.3f, 0.4f),  // 浅水颜色
-            glm::vec3(0.1f, 0.15f, 0.25f), // 深水颜色
-            depthFactor
-        );
-        
-        GLfloat fogColor[] = {
-            underwaterEffects.fogColor.r,
-            underwaterEffects.fogColor.g,
-            underwaterEffects.fogColor.b,
-            1.0f
-        };
-        glFogfv(GL_FOG_COLOR, fogColor);
-        glFogf(GL_FOG_DENSITY, underwaterEffects.fogDensity);
-    }
-}
 
 void GameWidget::initLights() {
-    // 清除现有光源
     lightSources.clear();
     
-    // 1. 主太阳光(方向光)
+    // 添加主光源
     lightSources.push_back({
-        glm::vec3(0.0f, aquariumSize, 0.0f),          // 位置
-        glm::vec3(0.0f, -1.0f, 0.0f),                 // 向下的方向
-        glm::vec3(1.0f, 0.95f, 0.8f),                 // 偏暖的白色
-        lightingParams.sunlightIntensity,
-        0.0f,                                          // 方向光不需要半径
-        0.0f                                           // 方向光不需要衰减
-    });
-
-    // 2. 添加焦散点光源
-    for(int i = 0; i < 4; ++i) {
-        lightSources.push_back({
-            glm::vec3(0.0f),                          // 位置会动态更新
-            glm::vec3(0.0f, -1.0f, 0.0f),
-            glm::vec3(0.6f, 0.8f, 1.0f),             // 偏蓝的色调
-            lightingParams.causticLightIntensity,
-            100.0f,                                   // 光照半径
-            2.0f                                      // 衰减系数
-        });
-    }
-
-    // 3. 体积光源
-    lightSources.push_back({
-        glm::vec3(0.0f, aquariumSize * 0.5f, 0.0f),
-        glm::vec3(0.0f, -1.0f, 0.0f),
-        glm::vec3(0.4f, 0.6f, 0.8f),                // 偏蓝的色调
-        lightingParams.volumetricIntensity,
-        200.0f,
-        1.0f
+        glm::vec3(0.0f, aquariumSize * 1.5f, 0.0f), // 光源位置
+        glm::vec3(0.0f, -1.0f, 0.0f),              // 方向
+        glm::vec3(1.0f, 0.95f, 0.9f),              // 暖色调
+        5.0f,                                       // 增强强度
+        aquariumSize * 2.0f,                        // 范围
+        0.0001f                                     // 衰减
     });
     
-    lightSources.clear();
-    
-    // 调整光源参数使其更明显
-    // 1. 主太阳光(方向光) - 增强强度
-    lightSources.push_back({
-        glm::vec3(0.0f, aquariumSize * 1.5f, 0.0f),  // 提高光源位置
-        glm::vec3(0.0f, -1.0f, 0.0f),
-        glm::vec3(1.0f, 0.95f, 0.8f),
-        2.0f,  // 增加强度
-        0.0f,
-        0.0f
-    });
-
-    // 2. 环境点光源 - 增加数量和强度
+    // 添加水下补光
     for(int i = 0; i < 4; ++i) {
         float angle = i * glm::pi<float>() * 0.5f;
         lightSources.push_back({
-            glm::vec3(sin(angle) * aquariumSize * 0.8f, 
-                     aquariumSize * 0.7f,
-                     cos(angle) * aquariumSize * 0.8f),
-            glm::vec3(0.0f, -1.0f, 0.0f),
-            glm::vec3(0.8f, 0.9f, 1.0f),
-            1.5f,  // 增加强度
-            aquariumSize * 0.5f,  // 增加范围
-            1.0f
+            glm::vec3(cos(angle) * aquariumSize * 0.5f, 
+                     -aquariumSize * 0.3f,
+                     sin(angle) * aquariumSize * 0.5f),
+            glm::vec3(0.0f, 1.0f, 0.0f),
+            glm::vec3(0.2f, 0.4f, 0.8f), // 蓝色调
+            2.0f,
+            aquariumSize,
+            0.0005f
         });
-    }
-
-    // 应用光源到OpenGL
-    for(size_t i = 0; i < lightSources.size() && i < 8; ++i) {
-        GLenum light = GL_LIGHT0 + i;
-        const auto& src = lightSources[i];
-        
-        // 启用这个光源
-        glEnable(light);
-        
-        // 设置光源属性
-        GLfloat position[] = {
-            src.position.x, src.position.y, src.position.z,
-            (src.radius > 0.0f) ? 1.0f : 0.0f
-        };
-        GLfloat ambient[] = {
-            src.color.r * 0.2f * src.intensity,
-            src.color.g * 0.2f * src.intensity,
-            src.color.b * 0.2f * src.intensity,
-            1.0f
-        };
-        GLfloat diffuse[] = {
-            src.color.r * src.intensity,
-            src.color.g * src.intensity,
-            src.color.b * src.intensity,
-            1.0f
-        };
-        GLfloat direction[] = {
-            src.direction.x,
-            src.direction.y,
-            src.direction.z,
-            0.0f
-        };
-        
-        glLightfv(light, GL_POSITION, position);
-        glLightfv(light, GL_AMBIENT, ambient);
-        glLightfv(light, GL_DIFFUSE, diffuse);
-        glLightfv(light, GL_SPOT_DIRECTION, direction);
-        
-        // 设置衰减
-        if(src.radius > 0.0f) {
-            glLightf(light, GL_CONSTANT_ATTENUATION, 1.0f);
-            glLightf(light, GL_LINEAR_ATTENUATION, src.attenuation * 0.0001f);
-            glLightf(light, GL_QUADRATIC_ATTENUATION, src.attenuation * 0.00001f);
-        }
     }
 }
 
+void GameWidget::applyLightSettings() {
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadMatrixf(glm::value_ptr(viewMatrix));
+    
+    glEnable(GL_LIGHTING);
+    
+    GLint maxLights;
+    glGetIntegerv(GL_MAX_LIGHTS, &maxLights);
+    size_t numLights = std::min(lightSources.size(), static_cast<size_t>(maxLights));
+
+    // 禁用所有光源并重置状态
+    for(int i = 0; i < maxLights; ++i) {
+        glDisable(GL_LIGHT0 + i);
+    }
+
+    // 应用每个光源
+    for(size_t i = 0; i < numLights; ++i) {
+        const auto& light = lightSources[i];
+        GLenum lightEnum = GL_LIGHT0 + i;
+
+        glEnable(lightEnum);
+
+        // 设置光源位置和方向
+        GLfloat position[] = {
+            light.position.x, light.position.y, light.position.z,
+            (light.radius > 0.0f) ? 1.0f : 0.0f
+        };
+        glLightfv(lightEnum, GL_POSITION, position);
+
+        if(light.spotCutoff > 0.0f) {
+            // 配置聚光灯参数
+            glLightf(lightEnum, GL_SPOT_CUTOFF, light.spotCutoff);
+            glLightf(lightEnum, GL_SPOT_EXPONENT, light.spotExponent);
+            GLfloat direction[] = {
+                light.direction.x, light.direction.y, light.direction.z
+            };
+            glLightfv(lightEnum, GL_SPOT_DIRECTION, direction);
+        }
+
+        // 设置光照颜色和强度
+        float intensityFactor = light.intensity;
+        if(isInAquarium(cameraPos) && cameraPos.y < 0) {
+            // 水下增强光照
+            float depth = -cameraPos.y;
+            float depthFactor = std::min(1.0f, depth / (aquariumSize * 0.5f));
+            intensityFactor *= (1.0f - depthFactor * 0.3f); // 随深度轻微衰减
+        }
+
+        GLfloat ambient[] = {
+            light.color.r * 0.3f * intensityFactor,
+            light.color.g * 0.3f * intensityFactor,
+            light.color.b * 0.3f * intensityFactor,
+            1.0f
+        };
+
+        GLfloat diffuse[] = {
+            light.color.r * intensityFactor,
+            light.color.g * intensityFactor,
+            light.color.b * intensityFactor,
+            1.0f
+        };
+
+        GLfloat specular[] = {
+            light.color.r * 0.8f * intensityFactor,
+            light.color.g * 0.8f * intensityFactor,
+            light.color.b * 0.8f * intensityFactor,
+            1.0f
+        };
+
+        glLightfv(lightEnum, GL_AMBIENT, ambient);
+        glLightfv(lightEnum, GL_DIFFUSE, diffuse);
+        glLightfv(lightEnum, GL_SPECULAR, specular);
+
+        if(light.radius > 0.0f) {
+            // 优化衰减参数
+            float dist = light.radius;
+            glLightf(lightEnum, GL_CONSTANT_ATTENUATION, 1.0f);
+            glLightf(lightEnum, GL_LINEAR_ATTENUATION, 0.5f / dist);
+            glLightf(lightEnum, GL_QUADRATIC_ATTENUATION, 0.5f / (dist * dist));
+        }
+    }
+
+    glPopMatrix();
+}
+
 void GameWidget::updateLights() {
-    // 更新焦散光源位置 - 使用 chrono 代替 QTime
     auto now = std::chrono::steady_clock::now();
     auto duration = now.time_since_epoch();
     float time = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count() / 1000.0f;
     
-    for(size_t i = 1; i < 5; ++i) {  // 跳过主太阳光
-        float phase = time * 0.5f + i * glm::pi<float>() * 0.5f;
-        float radius = aquariumSize * 0.3f;
+    // 更新光束位置和方向
+    for(size_t i = 4; i < 7; ++i) {  // 更新三束光柱
+        if(i >= lightSources.size()) continue;
         
-        lightSources[i].position = glm::vec3(
-            sin(phase) * radius,
-            aquariumSize * 0.4f,
-            cos(phase) * radius
-        );
+        float phase = time * 0.2f + (i - 4) * glm::pi<float>() * 0.3f;
+        float xOffset = sin(phase) * aquariumSize * 0.2f;
+        float zOffset = cos(phase) * aquariumSize * 0.2f;
+        
+        // 移动光源位置
+        lightSources[i].position.x = xOffset;
+        lightSources[i].position.z = zOffset;
+        
+        // 更新光束方向，始终指向下方
+        lightSources[i].direction = glm::normalize(glm::vec3(0.0f, -1.0f, 0.0f));
     }
 
-    // 应用光源到OpenGL
-    for(size_t i = 0; i < lightSources.size() && i < 8; ++i) {
-        const auto& light = lightSources[i];
-        GLenum lightEnum = GL_LIGHT0 + i;
-
-        // 位置和方向
-        GLfloat position[] = {
-            light.position.x, light.position.y, light.position.z, 
-            (light.radius > 0.0f) ? 1.0f : 0.0f  // w=1表示点光源，w=0表示方向光
-        };
-        glLightfv(lightEnum, GL_POSITION, position);
-
-        if(light.radius > 0.0f) {
-            // 点光源衰减
-            glLightf(lightEnum, GL_CONSTANT_ATTENUATION, 1.0f);
-            glLightf(lightEnum, GL_LINEAR_ATTENUATION, light.attenuation * 0.001f);
-            glLightf(lightEnum, GL_QUADRATIC_ATTENUATION, light.attenuation * 0.0001f);
-        }
-
-        // 光照颜色和强��
-        GLfloat ambient[] = {
-            light.color.r * 0.1f * light.intensity,
-            light.color.g * 0.1f * light.intensity,
-            light.color.b * 0.1f * light.intensity,
-            1.0f
-        };
-        GLfloat diffuse[] = {
-            light.color.r * light.intensity,
-            light.color.g * light.intensity,
-            light.color.b * light.intensity,
-            1.0f
-        };
-        
-        glLightfv(lightEnum, GL_AMBIENT, ambient);
-        glLightfv(lightEnum, GL_DIFFUSE, diffuse);
-    }
-
-    // 水下光照调整逻辑简化
+    // 水下光照调整
     if(isInAquarium(cameraPos)) {
-        const float lightTransitionSpeed = 0.05f;  // 降低光照变化速度
-        
-        static float currentLightIntensity = 1.0f;
-        float targetIntensity = (cameraPos.y < 0) ? 
-            underwaterEffects.currentLight : 1.0f;
-            
-        currentLightIntensity = glm::mix(currentLightIntensity,
-                                        targetIntensity,
-                                        lightTransitionSpeed);
-        
-        // 应用光照设置
-        for(auto& light : lightSources) {
-            light.intensity *= currentLightIntensity;
-        }
-        
-        // 更新全局环境光
-        GLfloat globalAmbient[] = {
-            currentLightIntensity * 0.3f,
-            currentLightIntensity * 0.35f,
-            currentLightIntensity * 0.4f,
-            1.0f
-        };
-        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, globalAmbient);
-    }
-    // 修改水下光照更新逻辑
-    static float lastDepth = 0.0f;
-    static float currentIntensity = 1.0f;
-    
-    if(isInAquarium(cameraPos)) {
-        float depth = std::max(0.0f, -cameraPos.y);  // 确保深度不会为负
+        float depth = std::max(0.0f, -cameraPos.y);
         float depthFactor = std::min(1.0f, depth / (aquariumSize * 0.5f));
         
-        // 平滑深度变化
-        lastDepth = glm::mix(lastDepth, depth, 0.1f);
-        
-        // 在水面附近时也应用过渡效果
-        float transitionZone = 100.0f;  // 过渡区域大小
-        float waterSurfaceEffect = 1.0f;
-        
-        if(cameraPos.y > 0 && cameraPos.y < transitionZone) {
-            waterSurfaceEffect = 1.0f - (cameraPos.y / transitionZone);
-        }
-        
-        // 计算目标光照强度
-        float targetIntensity = waterSurfaceEffect * (1.0f - depthFactor * underwaterEffects.depthDarkening);
-        targetIntensity = glm::mix(underwaterEffects.minAmbientLight, 1.0f, targetIntensity);
-        
-        // 平滑过渡当前光照强度
-        currentIntensity = glm::mix(currentIntensity, targetIntensity, 
-                                  1.0f - underwaterEffects.lightStability);
-        
-        // 应用光照设置
-        for(auto& light : lightSources) {
-            light.intensity *= currentIntensity;
-        }
-        
-        // 设置全局环境光
-        GLfloat globalAmbient[] = {
-            currentIntensity * 0.3f,
-            currentIntensity * 0.35f,
-            currentIntensity * 0.4f,
+        // 根据深度调整环境光
+        GLfloat ambientColor[] = {
+            0.3f * (1.0f - depthFactor * 0.5f),
+            0.3f * (1.0f - depthFactor * 0.3f),
+            0.4f * (1.0f - depthFactor * 0.2f),
             1.0f
         };
-        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, globalAmbient);
+        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, ambientColor);
+    }
+    
+    // 应用更新后的光照设置
+    applyLightSettings();
+}
+
+void GameWidget::updateBubbles() {
+    if(water) {
+        // 传入 deltaTime
+        water->updateBubbles(deltaTime);
+        return;
     }
 }

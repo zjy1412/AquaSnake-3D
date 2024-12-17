@@ -1,3 +1,4 @@
+#define GLM_ENABLE_EXPERIMENTAL
 #include <GL/glew.h>
 #include <QOpenGLFunctions>
 #include "snake.h"
@@ -11,6 +12,7 @@ Snake::Snake(float startX, float startY, float startZ)
     , segmentSize(DEFAULT_SEGMENT_SIZE)
     , moveSpeed(DEFAULT_MOVE_SPEED)
 {
+    // 移除这里的 initializeOpenGLFunctions() 调用
     // 使用传入的参数设置起始位置
     glm::vec3 startPos(startX, startY, startZ);
     body.push_back(startPos);
@@ -19,6 +21,11 @@ Snake::Snake(float startX, float startY, float startZ)
     for(int i = 1; i < 3; ++i) {
         body.push_back(startPos - glm::vec3(i * segmentSize, 0.0f, 0.0f));
     }
+}
+
+void Snake::initializeGL()
+{
+    initializeOpenGLFunctions();
 }
 
 void Snake::move()
@@ -103,14 +110,14 @@ bool Snake::checkCollision(const glm::vec3& point) const
 
 bool Snake::checkSelfCollision() const
 {
-    // 显著增加忽略的节数，避免误判
+    // 显著增加忽略的节数以避免误判
     const size_t IGNORE_SEGMENTS = 15;  // 增加忽略的节数
     
     if(body.size() <= IGNORE_SEGMENTS) return false;
     
     const glm::vec3& head = body[0];
     
-    // 使用渐进式判定：距离头部越远的段，碰撞范围越大
+    // 采用渐进式判定：距离头部越远的段，碰撞范围越大
     for(size_t i = IGNORE_SEGMENTS; i < body.size(); ++i) {
         float distance = glm::length(head - body[i]);
         float collisionThreshold = segmentSize * (0.5f + static_cast<float>(i) / body.size() * 0.3f);
@@ -122,27 +129,40 @@ bool Snake::checkSelfCollision() const
     return false;
 }
 
-void Snake::draw() const
+void Snake::draw()  // 移除 const 限定符
 {
+    // 保存当前的OpenGL状态
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
+    glPushMatrix();
+
+    // 设置材质属性
+    GLfloat matSpecular[] = { 0.6f, 0.8f, 0.6f, 1.0f };
+    GLfloat matShininess[] = { 48.0f };
+    glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, matSpecular);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, matShininess);
+    
+    // 绘制蛇的每个段
     for(size_t i = 0; i < body.size(); ++i) {
         glPushMatrix();
         glTranslatef(body[i].x, body[i].y, body[i].z);
         
         if(i == 0) {
-            // 红色蛇头，比身体大一些
-            glColor3f(1.0f, 0.2f, 0.2f);
-            drawSphere(segmentSize * 1.2f, 20, 20);  // 使用 segmentSize
+            glColor3f(1.0f, 0.5f, 0.5f);
+            drawSphere(segmentSize * 1.3f, 24, 24);
         } else {
-            // 渐变的绿色蛇身
-            float greenIntensity = 1.0f - (float)i / body.size() * 0.3f;
-            glColor3f(0.2f, greenIntensity, 0.2f);
-            drawSphere(segmentSize, 16, 16);  // 使用 segmentSize
+            float fade = 1.0f - (float)i / body.size() * 0.3f;
+            glColor3f(0.4f, fade, 0.4f);
+            drawSphere(segmentSize * 1.1f, 20, 20);
         }
         glPopMatrix();
     }
+    
+    // 恢复OpenGL状态
+    glPopMatrix();
+    glPopAttrib();
 }
 
-void Snake::drawSphere(float radius, int sectors, int stacks) const
+void Snake::drawSphere(float radius, int sectors, int stacks)  // 移除 const 限定符
 {
     const float PI = 3.14159265359f;
     
