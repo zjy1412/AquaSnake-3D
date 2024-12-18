@@ -217,6 +217,8 @@ const char* Water::volumetricLightFragmentShader = R"(
 Water::Water(float size) : 
     size(size), 
     waterTime(0.0f),
+    causticTime(0.0f),
+    bubbleSpawnTimer(0.0f),
     cameraPos(0.0f),
     waterProgram(0),
     waterVAO(0),
@@ -226,18 +228,24 @@ Water::Water(float size) :
     volumetricLightTexture(0),
     waterNormalTexture(0),
     bubbleTexture(0),
+    underwaterParticleTexture(0),
+    waterParticleTexture(0),
+    volumetricProgram(0),
+    volumetricVAO(0),
+    volumetricVBO(0),
     vertexCount(0),
     projectionMatrix(1.0f),
-    viewMatrix(1.0f)
+    viewMatrix(1.0f),
+    originalState{false, false, false, {0.0f}, {0.0f}}
 {
-    // 调整水体参数以优化游戏体验
+    // 调�����水体参数以优化游戏体验
     waterParams.deepColor = glm::vec3(0.1f, 0.2f, 0.4f);        // 更深的蓝色
     waterParams.shallowColor = glm::vec3(0.3f, 0.5f, 0.7f);     // 更亮的蓝色
     waterParams.waterDensity = 0.0002f;                         // 进一步降低水密度，提高能见度
     waterParams.visibilityFalloff = 0.01f;                      // 降低能见度衰减
     waterParams.underwaterScatteringDensity = 0.001f;           // 降低散射密度
     waterParams.causticIntensity = 0.4f;                        // 增强焦散效果
-    waterParams.bubbleSpeed = 20.0f;                            // 降低气泡速度使其���自然
+    waterParams.bubbleSpeed = 20.0f;                            // 降低气泡速度
     waterParams.causticBlend = 0.8f;                            // 增强焦散混合
     waterParams.underwaterGodrayIntensity = 0.6f;               // 增强光束效果
     waterParams.underwaterVisibility = 5000.0f;                 // 增加水下能见度
@@ -285,26 +293,70 @@ void Water::initializeGL()
 
 // 修改init函数，确保气泡正确初始化
 void Water::init() {
+    qDebug() << "\n=== Initializing Water System ===";
+    qDebug() << "Water size:" << size;
+    qDebug() << "MAX_BUBBLES:" << MAX_BUBBLES;
+    
+    // 初始化OpenGL函数
     initializeOpenGLFunctions();
     
+    // 检查必要的OpenGL扩展
+    qDebug() << "Checking OpenGL extensions...";
+    if (!glewIsSupported("GL_ARB_point_sprite")) {
+        qDebug() << "Warning: GL_ARB_point_sprite not supported!";
+    }
+    if (!glewIsSupported("GL_ARB_point_parameters")) {
+        qDebug() << "Warning: GL_ARB_point_parameters not supported!";
+    }
+    
+    // 获取OpenGL版本信息
+    const GLubyte* version = glGetString(GL_VERSION);
+    const GLubyte* vendor = glGetString(GL_VENDOR);
+    const GLubyte* renderer = glGetString(GL_RENDERER);
+    qDebug() << "OpenGL Version:" << version;
+    qDebug() << "OpenGL Vendor:" << vendor;
+    qDebug() << "OpenGL Renderer:" << renderer;
+    
     // 初始化着色器
+    qDebug() << "\nInitializing shaders...";
     initShaders();
     if (!validateShaderProgram()) {
         qDebug() << "Shader initialization failed!";
         return;
     }
+    qDebug() << "Shader initialization successful";
     
     // 创建几何体
+    qDebug() << "\nCreating water surface...";
     createWaterSurface();
+    qDebug() << "Water surface created with" << vertexCount << "vertices";
     
     // 初始化纹理
+    qDebug() << "\nInitializing textures...";
     glGenTextures(1, &causticTexture);
     glGenTextures(1, &waterNormalTexture);
     glGenTextures(1, &bubbleTexture);
     glGenTextures(1, &volumetricLightTexture);
     glGenTextures(1, &waterParticleTexture);
     
+    // 检查纹理创建是否成功
+    qDebug() << "Texture IDs:";
+    qDebug() << "- Caustic texture:" << causticTexture;
+    qDebug() << "- Water normal texture:" << waterNormalTexture;
+    qDebug() << "- Bubble texture:" << bubbleTexture;
+    qDebug() << "- Volumetric light texture:" << volumetricLightTexture;
+    qDebug() << "- Water particle texture:" << waterParticleTexture;
+    
+    if (!glIsTexture(causticTexture) || !glIsTexture(waterNormalTexture) ||
+        !glIsTexture(bubbleTexture) || !glIsTexture(volumetricLightTexture) ||
+        !glIsTexture(waterParticleTexture)) {
+        qDebug() << "Failed to create one or more textures!";
+        return;
+    }
+    qDebug() << "All textures created successfully";
+    
     // 初始化各个组件
+    qDebug() << "\nInitializing components...";
     initCausticTexture();
     initWaterNormalTexture();
     createBubbleTexture();
@@ -312,38 +364,99 @@ void Water::init() {
     initWaterParticles();
     
     // 初始化粒子系统
+    qDebug() << "\nInitializing particle system...";
     initParticleSystem();
     
-    // 初始化水下效果
+    // 初始化水效果
+    qDebug() << "\nInitializing underwater effects...";
     initUnderwaterEffects();
     
     // 确保水下粒子系统正确初始化
+    qDebug() << "\nInitializing underwater particles...";
     underwaterParticles.resize(static_cast<size_t>(waterParams.underwaterParticleDensity));
     for(auto& particle : underwaterParticles) {
         generateUnderwaterParticle(particle);
     }
+    qDebug() << "Underwater particles initialized:" << underwaterParticles.size();
     
     // 生成初始气泡
-    for(int i = 0; i < MAX_BUBBLES/2; ++i) {
+    qDebug() << "\nGenerating initial bubbles...";
+    bubbles.clear();  // 确保从空列表开始
+    for(int i = 0; i < MAX_BUBBLES; ++i) {
         spawnBubble();
+        if(i % 100 == 0) {
+            qDebug() << "Generated" << i + 1 << "bubbles...";
+        }
     }
     
-    qDebug() << "Water system initialized:";
-    qDebug() << "- Bubbles:" << bubbles.size();
+    // 验证初始化状态
+    qDebug() << "\nInitialization complete:";
+    qDebug() << "- Bubbles:" << bubbles.size() << "/" << MAX_BUBBLES;
     qDebug() << "- Water particles:" << waterParticles.size();
     qDebug() << "- Underwater particles:" << underwaterParticles.size();
+    
+    if(bubbles.empty()) {
+        qDebug() << "Warning: No bubbles were generated!";
+    } else {
+        const auto& firstBubble = bubbles[0];
+        qDebug() << "First bubble state:";
+        qDebug() << "- Position:" << firstBubble.position.x << firstBubble.position.y << firstBubble.position.z;
+        qDebug() << "- Size:" << firstBubble.size;
+        qDebug() << "- Speed:" << firstBubble.speed;
+    }
+    
+    // 检查OpenGL错误
+    GLenum error = glGetError();
+    if(error != GL_NO_ERROR) {
+        qDebug() << "OpenGL error after initialization:" << error;
+    } else {
+        qDebug() << "No OpenGL errors during initialization";
+    }
 }
 
 void Water::initParticleSystem() {
+    qDebug() << "\n=== Initializing Particle System ===";
+    
     // 清空并重新生成气泡
     bubbles.clear();
     bubbleSpawnTimer = 0.0f;
     
+    qDebug() << "Generating initial bubbles...";
+    qDebug() << "MAX_BUBBLES:" << MAX_BUBBLES;
+    
     // 初始生成一定数量的气泡
     for(int i = 0; i < MAX_BUBBLES; ++i) {
         spawnBubble();
+        if(i == 0 || i == MAX_BUBBLES-1) {
+            qDebug() << "Generated bubble" << i + 1 << "of" << MAX_BUBBLES;
+        }
     }
-    qDebug() << "Initialized" << bubbles.size() << "bubbles";
+    
+    qDebug() << "Initialization complete. Total bubbles:" << bubbles.size();
+    
+    // 验证气泡是否正确生成
+    if(!bubbles.empty()) {
+        const auto& firstBubble = bubbles[0];
+        qDebug() << "First bubble verification:";
+        qDebug() << "- Position:" << firstBubble.position.x << firstBubble.position.y << firstBubble.position.z;
+        qDebug() << "- Size:" << firstBubble.size;
+        qDebug() << "- Speed:" << firstBubble.speed;
+        qDebug() << "- Alpha:" << firstBubble.alpha;
+    } else {
+        qDebug() << "Error: No bubbles were generated!";
+    }
+    
+    // 检查气泡纹理
+    if(bubbleTexture == 0) {
+        qDebug() << "Creating bubble texture...";
+        createBubbleTexture();
+    }
+    
+    if(!glIsTexture(bubbleTexture)) {
+        qDebug() << "Error: Bubble texture not created properly!";
+    } else {
+        qDebug() << "Bubble texture created successfully.";
+    }
 }
 
 void Water::initUnderwaterEffects() {
@@ -382,14 +495,14 @@ void Water::initUnderwaterEffects() {
 }
 
 void Water::initShaders() {
-    // 创建并编译着色器
+    // 创建并编译着��器
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
     
     glShaderSource(vertexShader, 1, &waterVertexShader, NULL);
     glShaderSource(fragmentShader, 1, &waterFragmentShader, NULL);
     
-    // 编译顶���着色器
+    // 编译着色器
     glCompileShader(vertexShader);
     GLint success;
     GLchar infoLog[512];
@@ -426,7 +539,7 @@ void Water::initShaders() {
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
-    // 验证所有必需的uniform变量
+    // 验证所必需的uniform变量
     GLint uniformLocation;
     const char* requiredUniforms[] = {
         "projection", "view", "model", "time",
@@ -445,8 +558,8 @@ void Water::createWaterSurface() {
     glGenVertexArrays(1, &waterVAO);
     glGenBuffers(1, &waterVBO);
 
-    // 将水面设置在水族箱顶部
-    float waterHeight = size * 0.5f; // 水族箱高度是总尺寸的一半
+    // 将水设置在水族箱顶部
+    float waterHeight = size * 0.5f; // 水族箱高���是总尺寸的一半
     float vertices[] = {
         // 顶面
         -size,  waterHeight, -size,  0.0f, 0.0f,  // 左后
@@ -463,7 +576,7 @@ void Water::createWaterSurface() {
     glBindBuffer(GL_ARRAY_BUFFER, waterVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-    // 位置属性
+    // 位属性
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
     // 纹理坐标属性
@@ -500,7 +613,7 @@ void Water::initCausticTexture() {
 }
 
 void Water::generateCausticTexture() {
-    const int texSize = 512; // 增加纹理分辨率
+    const int texSize = 512; // 增加纹理分率
     std::vector<float> texData(texSize * texSize);
     
     // 生成基于Voronoi图案的焦散纹理
@@ -566,7 +679,7 @@ void Water::initVolumetricLight() {
     glBindFramebuffer(GL_FRAMEBUFFER, volumetricLightFBO);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, volumetricLightTexture, 0);
     
-    // 检查FBO是否完整
+    // 查FBO是否完整
     if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         qDebug() << "Volumetric light FBO is not complete!";
     }
@@ -585,7 +698,7 @@ void Water::initVolumetricLightShader() {
     glShaderSource(vertexShader, 1, &volumetricLightVertexShader, NULL);
     glCompileShader(vertexShader);
     
-    // 编译片段着色器
+    // 编译片着色器
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(fragmentShader, 1, &volumetricLightFragmentShader, NULL);
     glCompileShader(fragmentShader);
@@ -621,7 +734,7 @@ void Water::createVolumetricScreenQuad() {
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
 }
 
-// 修改render函数，确保设置所有uniform变量
+// 修改render函数，确保设置所有uniform量
 void Water::render(const glm::mat4& projection, const glm::mat4& view) {
     // 从view矩阵中提取相机位置
     glm::mat4 viewInverse = glm::inverse(view);
@@ -638,7 +751,7 @@ void Water::render(const glm::mat4& projection, const glm::mat4& view) {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
-    // 禁用面剔除以允许双面渲染
+    // 禁用面剔��以允许双面渲染
     glDisable(GL_CULL_FACE);
     
     // 启用深度测试但禁用深度写入
@@ -679,21 +792,18 @@ void Water::render(const glm::mat4& projection, const glm::mat4& view) {
     glDepthMask(GL_TRUE);
 
     // 检查是否有气泡和粒子
-    qDebug() << "Rendering state:";
-    qDebug() << "- Camera position:" << cameraPos.x << cameraPos.y << cameraPos.z;
-    qDebug() << "- Bubble count:" << bubbles.size();
-    qDebug() << "- Particle count:" << waterParticles.size();
-    qDebug() << "- Is underwater:" << (cameraPos.y < size);  // 修改判断条件
+    qDebug() << "\n=== Rendering State ===";
+    qDebug() << "Camera position:" << cameraPos.x << cameraPos.y << cameraPos.z;
+    qDebug() << "Bubble count:" << bubbles.size();
+    qDebug() << "Particle count:" << waterParticles.size();
+    qDebug() << "Is underwater:" << (cameraPos.y < 0.0f);
     
     // 渲染气泡和粒子
     if(!bubbles.empty()) {
-        qDebug() << "Rendering bubbles...";
+        qDebug() << "Attempting to render" << bubbles.size() << "bubbles...";
         renderBubbles();
-    }
-    
-    if(cameraPos.y < size && !waterParticles.empty()) {  // 修改判断条件
-        qDebug() << "Rendering water particles...";
-        renderWaterParticles();
+    } else {
+        qDebug() << "No bubbles to render!";
     }
     
     // 恢复状态
@@ -707,10 +817,10 @@ void Water::renderUnderwaterEffects(const glm::mat4& projection, const glm::mat4
     if(cameraPos.y < 0) {
         float depth = -cameraPos.y;
         
-        // 移除视角相关的影响，只使用深度
+        // 移除视角相的影响，只使用深度
         float depthFactor = glm::min(0.3f, depth / (size * 0.8f));
         
-        // 计算目标颜色，不考虑角
+        // 计算目标颜色，不虑角
         glm::vec3 targetColor = glm::mix(
             waterParams.underwaterColor,
             waterParams.deepColor,
@@ -733,10 +843,10 @@ void Water::renderUnderwaterEffects(const glm::mat4& projection, const glm::mat4
         );
     }
     
-    // 确保在每帧更新下效果参数
+    // 确保在每帧更下效果数
     glUseProgram(waterProgram);
     
-    // 更新相机位置
+    // 更新相机位���
     glUniform3fv(glGetUniformLocation(waterProgram, "cameraPosition"), 1,
                  glm::value_ptr(cameraPos));
                  
@@ -749,14 +859,14 @@ void Water::renderUnderwaterEffects(const glm::mat4& projection, const glm::mat4
                    adjustedDensity);
     }
     
-    // 添加视角方向检测和平滑过渡
+    // 添加视角方向检和平滑过渡
     static glm::vec3 lastCameraDir = glm::vec3(0.0f);
     glm::vec3 currentCameraDir = glm::normalize(-cameraPos);
     
     // 检测视角突变
     float directionChange = glm::dot(lastCameraDir, currentCameraDir);
     if(directionChange < 0.7f) { // 大约45度以上的突变
-        // 使用更平滑的过渡
+        // 使用��平滑的过渡
         currentCameraDir = glm::normalize(glm::mix(lastCameraDir, currentCameraDir, 0.1f));
     }
     
@@ -807,7 +917,7 @@ int Water::width() const {
 }
 
 int Water::height() const {
-    return 768;  // 默认值，以根据需要调整
+    return 768;  // 默认值根据需要调整
 }
 
 void Water::initWaterNormalTexture() {
@@ -882,37 +992,49 @@ void Water::initWaterNormalTexture() {
 }
 
 void Water::createBubbleTexture() {
+    qDebug() << "\n=== Creating Bubble Texture ===";
+    
+    // 检查是否已存在纹理
+    if(bubbleTexture != 0) {
+        if(glIsTexture(bubbleTexture)) {
+            qDebug() << "Deleting existing bubble texture";
+            glDeleteTextures(1, &bubbleTexture);
+        }
+        bubbleTexture = 0;
+    }
+
     const int texSize = 64;  // 纹理尺寸
     std::vector<unsigned char> texData(texSize * texSize * 4);  // RGBA格式
+    
+    qDebug() << "Creating texture with size:" << texSize << "x" << texSize;
     
     float center = texSize / 2.0f;
     float maxDist = center * 0.9f;
     
+    // 生成纹理数据
     for(int y = 0; y < texSize; ++y) {
         for(int x = 0; x < texSize; ++x) {
             float dx = (x - center) / center;
             float dy = (y - center) / center;
             float dist = sqrt(dx * dx + dy * dy);
             
-            // 计算气泡效果
-            float alpha;
+            int index = (y * texSize + x) * 4;
+            
             if(dist < 0.9f) {
                 // 创建一个软边缘的圆形
-                alpha = dist < 0.7f ? 0.7f : (0.9f - dist) / 0.2f;
+                float alpha = dist < 0.7f ? 0.7f : (0.9f - dist) / 0.2f;
                 
                 // 添加边缘高光
                 float edgeHighlight = std::max(0.0f, 1.0f - abs(dist - 0.8f) * 10.0f);
                 float highlight = std::max(0.0f, 1.0f - (dist * 2.0f));
                 
-                int index = (y * texSize + x) * 4;
-                // 内部颜色
+                // 设置颜色值
                 texData[index + 0] = static_cast<unsigned char>((0.8f + highlight * 0.2f) * 255);  // R
                 texData[index + 1] = static_cast<unsigned char>((0.9f + highlight * 0.1f) * 255);  // G
                 texData[index + 2] = static_cast<unsigned char>((1.0f) * 255);                     // B
                 texData[index + 3] = static_cast<unsigned char>(alpha * (0.6f + edgeHighlight * 0.4f) * 255); // A
             } else {
                 // 完全透明的部分
-                int index = (y * texSize + x) * 4;
                 texData[index + 0] = 0;
                 texData[index + 1] = 0;
                 texData[index + 2] = 0;
@@ -921,16 +1043,62 @@ void Water::createBubbleTexture() {
         }
     }
     
-    // 创建并设置纹理
+    // 创建纹理
     glGenTextures(1, &bubbleTexture);
+    qDebug() << "Generated texture ID:" << bubbleTexture;
+    
+    // 检查纹理是否创建成功
+    if(bubbleTexture == 0) {
+        qDebug() << "Failed to generate texture!";
+        return;
+    }
+    
+    // 绑定并设置纹理
     glBindTexture(GL_TEXTURE_2D, bubbleTexture);
+    
+    // 检查是否成功绑定
+    GLint boundTexture;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &boundTexture);
+    qDebug() << "Bound texture ID:" << boundTexture;
+    
+    if(boundTexture != bubbleTexture) {
+        qDebug() << "Failed to bind texture!";
+        return;
+    }
+    
+    // 上传纹理数据
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texSize, texSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, texData.data());
+    
+    // 检查是否有错误
+    GLenum error = glGetError();
+    if(error != GL_NO_ERROR) {
+        qDebug() << "Error uploading texture data:" << error;
+        return;
+    }
     
     // 设置纹理参数
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    
+    // 再次检查错误
+    error = glGetError();
+    if(error != GL_NO_ERROR) {
+        qDebug() << "Error setting texture parameters:" << error;
+        return;
+    }
+    
+    // 验证纹理创建是否成功
+    if(!glIsTexture(bubbleTexture)) {
+        qDebug() << "Texture validation failed!";
+        return;
+    }
+    
+    qDebug() << "Bubble texture created successfully";
+    
+    // 解绑纹理
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 void Water::updateCaustics()
@@ -971,53 +1139,91 @@ void Water::updateCausticAnimation(float deltaTime) {
 }
 
 void Water::updateBubbles(float deltaTime) {
+    // 调试输出
+    static float debugTimer = 0.0f;
+    debugTimer += deltaTime;
+    if(debugTimer >= 1.0f) {
+        qDebug() << "\n=== Bubble System Status ===";
+        qDebug() << "Total bubbles:" << bubbles.size();
+        if(!bubbles.empty()) {
+            qDebug() << "First bubble:";
+            qDebug() << "- Position:" << bubbles[0].position.x << bubbles[0].position.y << bubbles[0].position.z;
+            qDebug() << "- Size:" << bubbles[0].size;
+            qDebug() << "- Speed:" << bubbles[0].speed;
+            qDebug() << "- Alpha:" << bubbles[0].alpha;
+        }
+        debugTimer = 0.0f;
+    }
+
     // 更新现有气泡
+    int removedBubbles = 0;
+    int activeBubbles = 0;
     for(auto it = bubbles.begin(); it != bubbles.end();) {
         Bubble& bubble = *it;
         
         // 更新位置
-        bubble.position.y += bubble.speed * deltaTime * 50.0f;
+        bubble.position.y += bubble.speed * deltaTime;
         
         // 添加螺旋运动
-        float spiralTime = this->waterTime * 0.5f + bubble.phase;
-        bubble.position.x += sin(spiralTime) * bubble.wobble * deltaTime;
-        bubble.position.z += cos(spiralTime) * bubble.wobble * deltaTime;
+        float spiralTime = waterTime * 0.5f + bubble.phase;
+        bubble.position.x += sin(spiralTime) * bubble.wobble * deltaTime * 2.0f;
+        bubble.position.z += cos(spiralTime) * bubble.wobble * deltaTime * 2.0f;
         
         // 更新相位
-        bubble.phase += deltaTime;
+        bubble.phase += deltaTime * 2.0f;
         
-        // 根据高度调整速度
-        float heightFactor = (bubble.position.y + this->size) / (this->size * 2.0f);
-        bubble.speed = glm::mix(bubble.speed, bubble.speed * (1.0f + heightFactor * 0.5f), deltaTime);
+        // 根据高度调整速度和大小
+        float heightFactor = (bubble.position.y + size) / (size * 2.0f);
+        bubble.speed = glm::mix(bubble.speed, bubble.speed * (1.0f + heightFactor * 0.8f), deltaTime);
+        bubble.size = glm::mix(bubble.size, bubble.size * (1.0f + heightFactor * 0.2f), deltaTime);
         
         // 检查是否超出范围
-        if(bubble.position.y > this->size * 0.5f) {
+        if(bubble.position.y > size * 0.5f) {
             spawnBubble();  // 生成新气泡
             it = bubbles.erase(it);  // 移除当前气泡
+            removedBubbles++;
         } else {
             ++it;
+            activeBubbles++;
         }
     }
     
     // 维持气泡数量
+    int spawnedBubbles = 0;
     while(bubbles.size() < MAX_BUBBLES) {
         spawnBubble();
+        spawnedBubbles++;
+    }
+
+    if(removedBubbles > 0 || spawnedBubbles > 0) {
+        qDebug() << "Bubble updates:";
+        qDebug() << "- Removed:" << removedBubbles;
+        qDebug() << "- Spawned:" << spawnedBubbles;
+        qDebug() << "- Active:" << activeBubbles;
     }
 }
 
 void Water::renderBubbles() {
-    if(bubbles.empty()) return;
+    if(bubbles.empty()) {
+        qDebug() << "No bubbles to render!";
+        return;
+    }
 
+    qDebug() << "\n=== Rendering Bubbles ===";
+    qDebug() << "Number of bubbles:" << bubbles.size();
+
+    // 保存当前OpenGL状态
     glPushAttrib(GL_ALL_ATTRIB_BITS);
+    
+    // 设置渲染状态
+    glDisable(GL_LIGHTING);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE);  // 使用加法混合，与粒子保持一致
     
     // 启用点精灵
     glEnable(GL_POINT_SPRITE);
     glEnable(GL_PROGRAM_POINT_SIZE);
     glTexEnvi(GL_POINT_SPRITE, GL_COORD_REPLACE, GL_TRUE);
-    
-    // 设置混合模式
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
     // 禁用深度写入但保持深度测试
     glDepthMask(GL_FALSE);
@@ -1025,145 +1231,185 @@ void Water::renderBubbles() {
     
     // 确保气泡纹理存在并绑定
     if(bubbleTexture == 0) {
+        qDebug() << "Creating bubble texture...";
         createBubbleTexture();
     }
+    
+    // 检查纹理状态
+    if (!glIsTexture(bubbleTexture)) {
+        qDebug() << "Error: Invalid bubble texture!";
+        return;
+    }
+    
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, bubbleTexture);
     
-    // 获取并设置最大点大小
-    GLfloat maxSize;
-    glGetFloatv(GL_POINT_SIZE_MAX, &maxSize);
+    // 检查纹理绑定状态
+    GLint boundTexture;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &boundTexture);
+    qDebug() << "Bound texture ID:" << boundTexture;
     
-    // 使用modelview和projection矩阵
+    // 设置投影和模型视图矩阵
     glMatrixMode(GL_PROJECTION);
     glLoadMatrixf(glm::value_ptr(projectionMatrix));
     glMatrixMode(GL_MODELVIEW);
     glLoadMatrixf(glm::value_ptr(viewMatrix));
     
+    // 获取并设置最大点大小
+    GLfloat maxSize;
+    glGetFloatv(GL_POINT_SIZE_MAX, &maxSize);
+    qDebug() << "Maximum point size:" << maxSize;
+    
+    // 增加点大小
+    glPointSize(50.0f);  // 设置一个较大的固定点大小进行测试
+    
+    // 设置固定颜色进行测试
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);  // 完全不透明的白色
+    
+    // 渲染气泡
     glBegin(GL_POINTS);
+    int renderedBubbles = 0;
     for(const auto& bubble : bubbles) {
-        float distanceToCamera = glm::length(cameraPos - bubble.position);
-        float sizeFactor = glm::mix(3.0f, 0.5f, distanceToCamera / (size * 2.0f));
-        float visibility = glm::mix(1.0f, 0.2f, distanceToCamera / (size * 1.5f));
+        // 直接渲染，不进行距离计算
+        glVertex3f(bubble.position.x, bubble.position.y, bubble.position.z);
+        renderedBubbles++;
         
-        // 限制点大小在有效范围内
-        float pointSize = std::min(bubble.size * sizeFactor * 100.0f, maxSize);
-        glPointSize(pointSize);
-        
-        // 增加气泡的亮度和可见度
-        glColor4f(1.0f, 1.0f, 1.0f, bubble.alpha * visibility * 2.0f);
-        
-        // 绘制气泡
-        glVertex3fv(glm::value_ptr(bubble.position));
+        // 输出第一个气泡的详细信息
+        if(renderedBubbles == 1) {
+            qDebug() << "First bubble details:";
+            qDebug() << "- Position:" << bubble.position.x << bubble.position.y << bubble.position.z;
+            qDebug() << "- Size:" << bubble.size;
+            qDebug() << "- Alpha:" << bubble.alpha;
+        }
     }
     glEnd();
     
-    // 恢复深度写入
+    qDebug() << "Rendered" << renderedBubbles << "bubbles";
+    
+    // 检查渲染后的状态
+    GLenum error = glGetError();
+    if(error != GL_NO_ERROR) {
+        qDebug() << "OpenGL error after rendering bubbles:" << error;
+    }
+    
+    // 恢复OpenGL状态
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_POINT_SPRITE);
+    glDisable(GL_PROGRAM_POINT_SIZE);
+    glDisable(GL_BLEND);
+    glEnable(GL_LIGHTING);
     glDepthMask(GL_TRUE);
     
     glPopAttrib();
     
-    // 输出一些调试信息
-    qDebug() << "Bubble rendering details:";
-    qDebug() << "- Max point size:" << maxSize;
-    qDebug() << "- First bubble position:" << bubbles[0].position.x << bubbles[0].position.y << bubbles[0].position.z;
-    qDebug() << "- First bubble size:" << bubbles[0].size;
+    // 再次检查错误
+    error = glGetError();
+    if(error != GL_NO_ERROR) {
+        qDebug() << "OpenGL error after state restoration:" << error;
+    }
 }
 
 void Water::renderWaterParticles() {
-    if(waterParticles.empty()) return;
+    // 调试输出
+    qDebug() << "Rendering water particles... Count:" << waterParticles.size();
     
+    // 保存当前OpenGL状态
     glPushAttrib(GL_ALL_ATTRIB_BITS);
     
     // 启用点精灵
     glEnable(GL_POINT_SPRITE);
     glEnable(GL_PROGRAM_POINT_SIZE);
-    glTexEnvi(GL_POINT_SPRITE, GL_COORD_REPLACE, GL_TRUE);
     
-    // 设置混合模式
+    // 启用混合
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE);  // 使用加法混合使粒子更亮
     
     // 禁用深度写入但保持深度测试
     glDepthMask(GL_FALSE);
     glEnable(GL_DEPTH_TEST);
     
-    // 绑定颗粒纹理
-    glEnable(GL_TEXTURE_2D);
+    // 绑定粒子纹理
     glBindTexture(GL_TEXTURE_2D, waterParticleTexture);
+    glEnable(GL_TEXTURE_2D);
+    glTexEnvi(GL_POINT_SPRITE, GL_COORD_REPLACE, GL_TRUE);
     
-    // 获取并设置最大点大小
-    GLfloat maxSize;
-    glGetFloatv(GL_POINT_SIZE_MAX, &maxSize);
-    
-    // 使用modelview和projection矩阵
-    glMatrixMode(GL_PROJECTION);
-    glLoadMatrixf(glm::value_ptr(projectionMatrix));
-    glMatrixMode(GL_MODELVIEW);
-    glLoadMatrixf(glm::value_ptr(viewMatrix));
-    
+    // 开始渲染粒子
     glBegin(GL_POINTS);
+    int visibleParticles = 0;
     for(const auto& particle : waterParticles) {
-        float distanceToCamera = glm::length(cameraPos - particle.position);
-        float sizeFactor = glm::mix(1.5f, 0.5f, distanceToCamera / (size * 2.0f));
-        float visibility = glm::mix(1.0f, 0.2f, distanceToCamera / (size * 1.5f));
+        if(particle.life <= 0.0f) continue;
         
-        // 限制点大小在有效范围内
-        float pointSize = std::min(particle.size * sizeFactor * 50.0f, maxSize);
-        glPointSize(pointSize);
-        
-        // 增加颗粒的亮度和可见度
+        // 设置粒子颜色和透明度
         glColor4f(
             particle.color.r,
             particle.color.g,
             particle.color.b,
-            particle.alpha * visibility * 2.0f
+            particle.alpha
         );
         
-        // 绘制颗粒
-        glVertex3fv(glm::value_ptr(particle.position));
+        // 设置点大小
+        glPointSize(particle.size);
+        
+        // 渲染粒子
+        glVertex3f(
+            particle.position.x,
+            particle.position.y,
+            particle.position.z
+        );
+        
+        visibleParticles++;
     }
     glEnd();
     
-    // 恢复深度写入
+    qDebug() << "Visible particles rendered:" << visibleParticles;
+    
+    // 恢复OpenGL状态
     glDepthMask(GL_TRUE);
+    glDisable(GL_POINT_SPRITE);
+    glDisable(GL_PROGRAM_POINT_SIZE);
+    glDisable(GL_BLEND);
     
     glPopAttrib();
-    
-    // 输出一些调试信息
-    qDebug() << "Particle rendering details:";
-    qDebug() << "- Max point size:" << maxSize;
-    qDebug() << "- First particle position:" << waterParticles[0].position.x << waterParticles[0].position.y << waterParticles[0].position.z;
-    qDebug() << "- First particle size:" << waterParticles[0].size;
 }
 
 void Water::spawnBubble() {
-    if(bubbles.size() >= MAX_BUBBLES) return;
+    // 调试输出
+    qDebug() << "\n=== Spawning Bubble ===";
+    qDebug() << "Current bubble count:" << bubbles.size();
+    qDebug() << "MAX_BUBBLES:" << MAX_BUBBLES;
     
+    // 移除大小检查，确保可以生成气泡
     Bubble bubble;
     
-    // 在底部区域随机生成，缩小范围
-    float radius = (rand() / float(RAND_MAX)) * size * 0.4f;
+    // 在底部区域随机生成，缩小生成范围
+    float radius = (rand() / float(RAND_MAX)) * size * 0.4f;  // 减小到40%的尺寸
     float angle = (rand() / float(RAND_MAX)) * glm::two_pi<float>();
     
+    // 设置初始位置在底部，但不要太深
     bubble.position = glm::vec3(
-        radius * cos(angle),
-        -size * 0.45f,  // 从接近底部的位置生成
-        radius * sin(angle)
+        radius * cos(angle),                // X坐标
+        -size * 0.3f,                      // Y坐标（靠近底部但不要太深）
+        radius * sin(angle)                // Z坐标
     );
     
-    // 调整参数使气泡更容易看到
-    bubble.size = MIN_BUBBLE_SIZE + (rand() / float(RAND_MAX)) * (MAX_BUBBLE_SIZE - MIN_BUBBLE_SIZE);
-    bubble.speed = 15.0f + (rand() / float(RAND_MAX)) * 10.0f;  // 降低基础速度使运动更自然
-    bubble.wobble = 0.8f + (rand() / float(RAND_MAX)) * 0.4f;   // 增加摆动幅度
+    // 增大气泡参数
+    bubble.size = 30.0f + (rand() / float(RAND_MAX)) * 20.0f;  // 显著增大气泡尺寸
+    bubble.speed = 50.0f + (rand() / float(RAND_MAX)) * 30.0f;  // 增加速度
+    bubble.wobble = 0.5f + (rand() / float(RAND_MAX)) * 0.5f;   // 减小摆动幅度
     bubble.phase = rand() / float(RAND_MAX) * glm::two_pi<float>();
-    bubble.alpha = BUBBLE_BASE_ALPHA * 2.0f;  // 增加透明度使气泡更明显
-    
-    // 添加旋转效果
-    bubble.rotationSpeed = (rand() / float(RAND_MAX) - 0.5f) * 2.0f;
+    bubble.alpha = 1.0f;  // 设置为完全不透明
+    bubble.rotationSpeed = (rand() / float(RAND_MAX) - 0.5f) * 1.0f;
     bubble.rotation = rand() / float(RAND_MAX) * glm::two_pi<float>();
     
     bubbles.push_back(bubble);
+    
+    // 调试输出新生成的气泡信息
+    qDebug() << "New bubble generated:";
+    qDebug() << "- Position:" << bubble.position.x << bubble.position.y << bubble.position.z;
+    qDebug() << "- Size:" << bubble.size;
+    qDebug() << "- Speed:" << bubble.speed;
+    qDebug() << "- Alpha:" << bubble.alpha;
+    qDebug() << "New bubble count:" << bubbles.size();
 }
 
 void Water::saveGLState() {
@@ -1208,11 +1454,11 @@ void Water::beginUnderwaterEffect(const glm::mat4& proj, const glm::mat4& view) 
     glHint(GL_FOG_HINT, GL_NICEST);
     
     // 计算雾度和颜色
-    float baseDensity = 0.0003f;  // 降低基础雾气密度
+    float baseDensity = 0.0003f;  // 降低��础雾密度
     float depthFactor = std::max(0.0f, -cameraPos.y / size);
     float currentDensity = baseDensity * (1.0f + depthFactor * 0.5f);  // 减小深度影响
     
-    // 根据深度混合雾气颜色，使用更柔和的颜色
+    // 根据深度混合雾气颜色��使用更柔和的颜色
     glm::vec3 currentFogColor = glm::mix(
         waterParams.shallowColor * 1.2f,  // 稍微提亮浅水颜色
         waterParams.deepColor,
@@ -1228,8 +1474,8 @@ void Water::beginUnderwaterEffect(const glm::mat4& proj, const glm::mat4& view) 
     };
     glFogfv(GL_FOG_COLOR, fogColor);
     glFogf(GL_FOG_DENSITY, currentDensity);
-    glFogf(GL_FOG_START, size * 0.1f);  // 延迟雾气开始距离
-    glFogf(GL_FOG_END, size * 3.0f);    // 增加雾气结束距离
+    glFogf(GL_FOG_START, size * 0.1f);  // 延迟雾开始距离
+    glFogf(GL_FOG_END, size * 3.0f);    // 增加雾气结距离
     
     // 增强环境光以改善可见度
     GLfloat ambient[] = {
@@ -1251,26 +1497,48 @@ void Water::endUnderwaterEffect() {
 }
 
 void Water::update(float deltaTime) {
-    // 更新水面动画
     waterTime += deltaTime;
-    
-    // 更新体积光参数
-    if(cameraPos.y < 0.0f) { // 水下
-        volumetricParams.density = glm::mix(volumetricParams.density, 1.2f, deltaTime);
-        volumetricParams.exposure = glm::mix(volumetricParams.exposure, 2.5f, deltaTime);
-    } else { // 水上
-        volumetricParams.density = glm::mix(volumetricParams.density, 0.8f, deltaTime);
-        volumetricParams.exposure = glm::mix(volumetricParams.exposure, 1.5f, deltaTime);
-    }
-    
-    // 更新焦散动画
-    causticTime += deltaTime * waterParams.causticSpeed;
     
     // 更新水下粒子
     updateUnderwaterParticles(deltaTime);
     
-    // 更新下颗粒
-    updateWaterParticles(deltaTime);
+    // 调试输出当前状态
+    qDebug() << "\n=== Water System Update ===";
+    qDebug() << "Water time:" << waterTime;
+    qDebug() << "Current bubble count:" << bubbles.size();
+    
+    // 确保始终维持足够的气泡数量
+    while(bubbles.size() < MAX_BUBBLES) {
+        qDebug() << "Spawning new bubble to maintain count";
+        spawnBubble();
+    }
+    
+    // 更新现有气泡
+    for(auto it = bubbles.begin(); it != bubbles.end();) {
+        Bubble& bubble = *it;
+        
+        // 更新气泡位置和状态
+        updateBubble(bubble, deltaTime);
+        
+        // 检查气泡是否超出范围
+        if(bubble.position.y > size * 0.5f) {
+            qDebug() << "Bubble reached top, removing and spawning new one";
+            it = bubbles.erase(it);
+            spawnBubble();  // 立即生成新气泡
+        } else {
+            ++it;
+        }
+    }
+    
+    // 验证气泡数量
+    if(bubbles.size() != MAX_BUBBLES) {
+        qDebug() << "Warning: Bubble count mismatch!";
+        qDebug() << "Expected:" << MAX_BUBBLES;
+        qDebug() << "Actual:" << bubbles.size();
+    }
+    
+    // 更新焦散动画
+    updateCausticAnimation(deltaTime);
 }
 
 bool Water::validateShaderProgram() {
@@ -1318,7 +1586,7 @@ bool Water::checkTextureState() {
 
 void Water::initWaterParticles() {
     // 创建水下颗粒纹理
-    const int texSize = 32;
+    const int texSize = 64;  // 增大纹理尺寸
     std::vector<unsigned char> texData(texSize * texSize * 4);
     
     for(int y = 0; y < texSize; ++y) {
@@ -1327,14 +1595,18 @@ void Water::initWaterParticles() {
             float dy = (y - texSize/2.0f) / (texSize/2.0f);
             float dist = std::sqrt(dx*dx + dy*dy);
             
-            // 创建柔和的颗粒效果
-            float alpha = std::max(0.0f, 1.0f - dist * 2.0f);
-            alpha = std::pow(alpha, 1.5f);  // 使边缘更柔和
+            // 创建更明显的粒子效果
+            float alpha = std::max(0.0f, 1.0f - dist);
+            alpha = std::pow(alpha, 1.2f);  // 使边缘更清晰
+            
+            // 添加发光效果
+            float glow = std::max(0.0f, 1.0f - dist * 1.5f);
+            glow = std::pow(glow, 2.0f);
             
             int idx = (y * texSize + x) * 4;
-            texData[idx + 0] = 255;  // R
-            texData[idx + 1] = 255;  // G
-            texData[idx + 2] = 255;  // B
+            texData[idx + 0] = static_cast<unsigned char>((0.8f + glow * 0.2f) * 255);  // R
+            texData[idx + 1] = static_cast<unsigned char>((0.9f + glow * 0.1f) * 255);  // G
+            texData[idx + 2] = static_cast<unsigned char>(255);  // B
             texData[idx + 3] = static_cast<unsigned char>(alpha * 255);
         }
     }
@@ -1344,87 +1616,214 @@ void Water::initWaterParticles() {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texSize, texSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, texData.data());
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     
     // 初始化颗粒
     waterParticles.resize(MAX_WATER_PARTICLES);
     for(auto& particle : waterParticles) {
-        generateWaterParticle(particle);
+        generateWaterParticle(particle, glm::vec3(0.0f));
     }
+    
+    qDebug() << "Water particle texture initialized with size:" << texSize;
+    qDebug() << "Initial particle count:" << waterParticles.size();
 }
 
-void Water::generateWaterParticle(WaterParticle& particle) {
-    // 在较小的范围内生成粒子
-    float radius = size * 0.4f;
-    float theta = rand() / float(RAND_MAX) * glm::two_pi<float>();
-    float phi = rand() / float(RAND_MAX) * glm::pi<float>();
+void Water::generateWaterParticle(WaterParticle& particle, const glm::vec3& targetPos) {
+    // 在球形空间内随机生成位置，增大生成范围
+    float theta = (rand() / float(RAND_MAX)) * glm::two_pi<float>();
+    float phi = (rand() / float(RAND_MAX)) * glm::pi<float>();
+    float radius = PARTICLE_SPAWN_RADIUS * 2.0f * std::pow(rand() / float(RAND_MAX), 0.3f);
     
-    // 在球形空间内随机生成位置
-    particle.position = glm::vec3(
-        radius * sin(phi) * cos(theta),
-        radius * cos(phi),
-        radius * sin(phi) * sin(theta)
-    );
+    // 使用球坐标系生成偏移
+    float x = radius * sin(phi) * cos(theta);
+    float y = radius * sin(phi) * sin(theta);
+    float z = radius * cos(phi);
     
-    // 减小速度使运动更自然
+    // 设置粒子位置，直接使用目标位置加上偏移
+    particle.position = targetPos + glm::vec3(x, y, z);
+    
+    // 调试输出
+    static bool firstParticle = true;
+    if(firstParticle) {
+        qDebug() << "Generating particle at:" 
+                 << particle.position.x << particle.position.y << particle.position.z;
+        firstParticle = false;
+    }
+    
+    // 给予较小的随机初始速度
+    float speedFactor = 0.5f;  // 增加速度
     particle.velocity = glm::vec3(
-        (rand() / float(RAND_MAX) - 0.5f) * 0.1f,
-        (rand() / float(RAND_MAX) - 0.5f) * 0.05f,
-        (rand() / float(RAND_MAX) - 0.5f) * 0.1f
+        (rand() / float(RAND_MAX) - 0.5f) * speedFactor,
+        (rand() / float(RAND_MAX) - 0.5f) * speedFactor,
+        (rand() / float(RAND_MAX) - 0.5f) * speedFactor
     );
     
-    // 增大粒子尺寸和透明度
-    particle.size = PARTICLE_MIN_SIZE * 2.0f + 
-        (rand() / float(RAND_MAX)) * (PARTICLE_MAX_SIZE - PARTICLE_MIN_SIZE);
-    particle.alpha = PARTICLE_MIN_ALPHA * 1.5f +
-        (rand() / float(RAND_MAX)) * (PARTICLE_MAX_ALPHA - PARTICLE_MIN_ALPHA);
+    // 增大粒子尺寸
+    particle.size = 10.0f + (rand() / float(RAND_MAX)) * 20.0f;
     
-    particle.phase = rand() / float(RAND_MAX) * glm::two_pi<float>();
-    particle.life = 8.0f + rand() / float(RAND_MAX) * 4.0f; // 增加生命周期
+    // 增加初始透明度
+    particle.alpha = 0.6f;
+    particle.targetAlpha = 0.8f + (rand() / float(RAND_MAX)) * 0.2f;
     
-    // 更亮的颜色
-    particle.color = glm::vec3(
-        0.8f + rand() / float(RAND_MAX) * 0.2f,  // R
-        0.9f + rand() / float(RAND_MAX) * 0.1f,  // G
-        1.0f                                      // B
-    );
+    // 设置粒子颜色为亮蓝色
+    particle.color = glm::vec3(0.4f, 0.6f, 1.0f);
+    
+    // 增加生命周期
+    particle.life = 2.0f + (rand() / float(RAND_MAX)) * 2.0f;
+    particle.fadeState = 0.0f;
 }
 
-void Water::updateWaterParticles(float deltaTime) {
+void Water::updateWaterParticles(float deltaTime, const glm::vec3& targetPos) {
+    static float spawnTimer = 0.0f;
+    spawnTimer += deltaTime;
+    
+    // 增加粒子生成频率
+    if (spawnTimer >= 0.01f) {  // 更频繁地生成粒子
+        spawnTimer = 0.0f;
+        int particlesToSpawn = 100;  // 每次生成更多粒子
+        
+        for (int i = 0; i < particlesToSpawn; ++i) {
+            auto it = std::find_if(waterParticles.begin(), waterParticles.end(),
+                [](const WaterParticle& p) { return p.life <= 0.0f; });
+            
+            if (it != waterParticles.end()) {
+                generateWaterParticle(*it, targetPos);
+            } else if (waterParticles.size() < MAX_WATER_PARTICLES) {
+                WaterParticle newParticle;
+                generateWaterParticle(newParticle, targetPos);
+                waterParticles.push_back(newParticle);
+            }
+        }
+    }
+    
+    // 更新现有粒子
     for(auto& particle : waterParticles) {
-        // 布朗运动
-        particle.velocity += glm::vec3(
-            (rand() / float(RAND_MAX) - 0.5f) * 0.1f,
-            (rand() / float(RAND_MAX) - 0.5f) * 0.05f,
-            (rand() / float(RAND_MAX) - 0.5f) * 0.1f
-        ) * deltaTime;
-        
-        // 缓慢下沉
-        particle.velocity.y -= 0.05f * deltaTime;
-        
-        // 阻尼
-        particle.velocity *= 0.98f;
+        if(particle.life <= 0.0f) continue;
         
         // 更新位置
         particle.position += particle.velocity * deltaTime;
         
-        // 边界检查
-        float maxRadius = size * 0.9f;
-        float currentRadius = glm::length(particle.position);
-        if(currentRadius > maxRadius) {
-            particle.position = glm::normalize(particle.position) * maxRadius;
-            particle.velocity = glm::reflect(particle.velocity, -glm::normalize(particle.position));
-            particle.velocity *= 0.5f; // 碰撞能量损失
+        // 淡入淡出逻辑
+        const float FADE_TIME = 0.5f;
+        if (particle.life > FADE_TIME) {
+            // 淡入阶段
+            if (particle.fadeState < 1.0f) {
+                particle.fadeState += deltaTime / FADE_TIME;
+                particle.alpha = particle.targetAlpha * particle.fadeState;
+            }
+        } else {
+            // 淡出阶段
+            particle.alpha = (particle.life / FADE_TIME) * particle.targetAlpha;
         }
         
         // 更新生命周期
         particle.life -= deltaTime;
-        if(particle.life <= 0.0f) {
-            generateWaterParticle(particle);
-        }
         
-        // 颗粒闪烁
-        float flicker = 0.8f + sin(waterTime * 2.0f + particle.phase) * 0.2f;
-        particle.alpha = PARTICLE_MIN_ALPHA + 
-            (PARTICLE_MAX_ALPHA - PARTICLE_MIN_ALPHA) * flicker;
+        // 添加一些随机运动
+        particle.velocity += glm::vec3(
+            (rand() / float(RAND_MAX) - 0.5f) * 2.0f,
+            (rand() / float(RAND_MAX) - 0.5f) * 2.0f,
+            (rand() / float(RAND_MAX) - 0.5f) * 2.0f
+        ) * deltaTime;
+    }
+    
+    // 调试输出活跃粒子数量
+    int activeParticles = std::count_if(waterParticles.begin(), waterParticles.end(),
+        [](const WaterParticle& p) { return p.life > 0.0f; });
+    qDebug() << "Active particles:" << activeParticles;
+}
+
+void Water::updateBubble(Bubble& bubble, float deltaTime) {
+    // 简化更新逻辑，只保留基本的运动
+    bubble.position.y += bubble.speed * deltaTime;
+    
+    // 添加简单的水平运动
+    bubble.phase += deltaTime;
+    float wobbleAmount = 5.0f;  // 增大摆动幅度
+    bubble.position.x += sin(bubble.phase) * wobbleAmount * deltaTime;
+    bubble.position.z += cos(bubble.phase) * wobbleAmount * deltaTime;
+    
+    // 保持大小和透明度恒定
+    bubble.alpha = 1.0f;  // 保持完全不透明
+}
+
+void Water::dumpOpenGLState() {
+    qDebug() << "\n=== OpenGL State Dump ===";
+    
+    // 获取当前绑定的着色器程序
+    GLint currentProgram;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &currentProgram);
+    qDebug() << "Current shader program:" << currentProgram;
+    
+    // 检查混合状态
+    GLint blendEnabled;
+    glGetIntegerv(GL_BLEND, &blendEnabled);
+    qDebug() << "Blend enabled:" << (blendEnabled == GL_TRUE);
+    
+    // 检查深度测试状态
+    GLint depthTestEnabled;
+    glGetIntegerv(GL_DEPTH_TEST, &depthTestEnabled);
+    qDebug() << "Depth test enabled:" << (depthTestEnabled == GL_TRUE);
+    
+    // 检查深度写入状态
+    GLint depthMask;
+    glGetIntegerv(GL_DEPTH_WRITEMASK, &depthMask);
+    qDebug() << "Depth mask enabled:" << (depthMask == GL_TRUE);
+    
+    // 检查当前绑定的纹理
+    GLint boundTexture;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &boundTexture);
+    qDebug() << "Current bound texture:" << boundTexture;
+    
+    // 检查视口设置
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    qDebug() << "Viewport:" << viewport[0] << viewport[1] << viewport[2] << viewport[3];
+    
+    // 检查点大小范围
+    GLfloat pointSizeRange[2];
+    glGetFloatv(GL_POINT_SIZE_RANGE, pointSizeRange);
+    qDebug() << "Point size range:" << pointSizeRange[0] << "-" << pointSizeRange[1];
+    
+    // 检查当前点大小
+    GLfloat pointSize;
+    glGetFloatv(GL_POINT_SIZE, &pointSize);
+    qDebug() << "Current point size:" << pointSize;
+    
+    // 检查错误
+    GLenum error = glGetError();
+    if(error != GL_NO_ERROR) {
+        qDebug() << "OpenGL error during state dump:" << error;
+    }
+}
+
+void Water::checkGLError(const char* operation) {
+    GLenum error;
+    while((error = glGetError()) != GL_NO_ERROR) {
+        QString errorString;
+        switch(error) {
+            case GL_INVALID_ENUM:
+                errorString = "GL_INVALID_ENUM";
+                break;
+            case GL_INVALID_VALUE:
+                errorString = "GL_INVALID_VALUE";
+                break;
+            case GL_INVALID_OPERATION:
+                errorString = "GL_INVALID_OPERATION";
+                break;
+            case GL_STACK_OVERFLOW:
+                errorString = "GL_STACK_OVERFLOW";
+                break;
+            case GL_STACK_UNDERFLOW:
+                errorString = "GL_STACK_UNDERFLOW";
+                break;
+            case GL_OUT_OF_MEMORY:
+                errorString = "GL_OUT_OF_MEMORY";
+                break;
+            default:
+                errorString = QString("Unknown error %1").arg(error);
+        }
+        qDebug() << "OpenGL error after" << operation << ":" << errorString;
     }
 }

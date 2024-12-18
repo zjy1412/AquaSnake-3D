@@ -71,11 +71,13 @@ public:
     struct WaterParticle {
         glm::vec3 position;
         glm::vec3 velocity;
+        glm::vec3 color;
         float size;
         float alpha;
+        float targetAlpha;  // 新增：目标透明度
         float phase;
         float life;
-        glm::vec3 color;
+        float fadeState;    // 新增：淡入淡出状态
     };
 
     // 添加设置相机位置的方法
@@ -110,6 +112,10 @@ public:
     
     UnderwaterState& getUnderwaterState() { return underwaterState; }
 
+    // 将这些方法移到 public 区域
+    void updateWaterParticles(float deltaTime, const glm::vec3& snakePosition);
+    void renderWaterParticles();
+
 protected:
     int width() const;
     int height() const;
@@ -136,12 +142,12 @@ private:
     std::vector<Bubble> bubbles;
     
     // 调整气泡参数
-    static constexpr int MAX_BUBBLES = 500;         // 减少气泡数量以提高性能
-    static constexpr float MIN_BUBBLE_SIZE = 2.0f;  // 增大最小气泡尺寸
-    static constexpr float MAX_BUBBLE_SIZE = 6.0f;  // 墛大最大气泡尺寸
-    static constexpr float BUBBLE_BASE_ALPHA = 0.7f;// 墛加基础不透明度
-    static constexpr float BUBBLE_SPAWN_RATE = 0.005f;  // 降低生成速率
-    static constexpr float BUBBLE_SPREAD_FACTOR = 0.8f; // 减小扩散因子
+    static constexpr int MAX_BUBBLES = 500;         // 增加气泡数量
+    static constexpr float MIN_BUBBLE_SIZE = 8.0f;  // 增大最小气泡尺寸
+    static constexpr float MAX_BUBBLE_SIZE = 16.0f; // 增大最大气泡尺寸
+    static constexpr float BUBBLE_BASE_ALPHA = 0.9f;// 增加基础不透明度
+    static constexpr float BUBBLE_SPAWN_RATE = 0.05f;  // 增加生成率
+    static constexpr float BUBBLE_SPREAD_FACTOR = 1.2f; // 增加扩散因子
     float bubbleSpawnTimer;
 
     // 添加着色器源码声明
@@ -227,12 +233,12 @@ private:
     void saveGLState();
     void restoreGLState();
 
-    // 添加体积光相关参数
+    // 添加体积光关参数
     struct VolumetricLightParams {
         float density = 0.8f;         // 增加密度
         float scattering = 0.7f;      // 散射系数
         float exposure = 1.5f;        // 增强曝光
-        float decay = 0.98f;          // 提高衰减系数，使光线更��久
+        float decay = 0.98f;          // 提高衰减系数，使光线更久
         int numSamples = 100;         // 采样数量
         glm::vec3 lightColor = glm::vec3(1.0f, 0.98f, 0.95f); // 温暖的光线颜色
     };
@@ -256,20 +262,22 @@ private:
     void updateBubble(Bubble& bubble, float deltaTime);
 
     // 水下颗粒系统参数
-    static constexpr int MAX_WATER_PARTICLES = 1000;
-    static constexpr float PARTICLE_MIN_SIZE = 0.5f;
-    static constexpr float PARTICLE_MAX_SIZE = 2.0f;
-    static constexpr float PARTICLE_MIN_ALPHA = 0.2f;
-    static constexpr float PARTICLE_MAX_ALPHA = 0.6f;
-    static constexpr float PARTICLE_SPAWN_RADIUS = 0.8f;
+    static constexpr int MAX_WATER_PARTICLES = 1000;      // 保持较多的粒子数量
+    static constexpr float PARTICLE_MIN_SIZE = 1.5f;      
+    static constexpr float PARTICLE_MAX_SIZE = 4.0f;      
+    static constexpr float PARTICLE_MIN_ALPHA = 0.0f;     // 最小透明度为0，用于淡入
+    static constexpr float PARTICLE_MAX_ALPHA = 0.2f;     
+    static constexpr float PARTICLE_FADE_TIME = 1.5f;     // 增加淡入淡出时间
+    static constexpr float PARTICLE_SPAWN_RADIUS = 450.0f; // 生成范围
+    static constexpr float PARTICLE_SPAWN_HEIGHT = 200.0f;  // 高度范围
+    static constexpr float PARTICLE_LIFE_MIN = 2.0f;      // 最小生命周期
+    static constexpr float PARTICLE_LIFE_MAX = 4.0f;      // 最大生命周期
     
     std::vector<WaterParticle> waterParticles;
     GLuint waterParticleTexture;
     
     void initWaterParticles();
-    void updateWaterParticles(float deltaTime);
-    void renderWaterParticles();
-    void generateWaterParticle(WaterParticle& particle);
+    void generateWaterParticle(WaterParticle& particle, const glm::vec3& targetPos = glm::vec3(0.0f));
 };
 
 #endif // WATER_H

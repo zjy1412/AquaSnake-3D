@@ -110,7 +110,7 @@ GameWidget::~GameWidget()
 // 简化初始化，确保能看到场景
 void GameWidget::initializeGL()
 {
-    // 首先���始化OpenGL函数
+    // 首先OpenGL函数
     initializeOpenGLFunctions();
     glewInit();
 
@@ -238,6 +238,21 @@ void GameWidget::paintGL() {
         // 渲染水体
         water->render(projectionMatrix, viewMatrix);
         
+        // 确保在正确的时机渲染粒子
+        glMatrixMode(GL_PROJECTION);
+        glLoadMatrixf(glm::value_ptr(projectionMatrix));
+        glMatrixMode(GL_MODELVIEW);
+        glLoadMatrixf(glm::value_ptr(viewMatrix));
+        
+        // 禁用光照以避免影响粒子效果
+        glDisable(GL_LIGHTING);
+        
+        // 渲染水粒子
+        water->renderWaterParticles();
+        
+        // 恢复光照
+        glEnable(GL_LIGHTING);
+        
         // 恢复状态
         glPopAttrib();
     }
@@ -329,8 +344,8 @@ void GameWidget::keyPressEvent(QKeyEvent *event)
 void GameWidget::updateGame()
 {
     if(gameState != GameState::PLAYING || !snake) return;
-
-    // 预判下一个位置
+    
+    // 预判下一个��置
     glm::vec3 nextPos = snake->getHeadPosition() + 
                         glm::normalize(snake->getDirection()) * 
                         snake->getMovementSpeed();
@@ -344,6 +359,21 @@ void GameWidget::updateGame()
 
     // 移动蛇
     snake->move();
+    
+    // 更新水体和粒子效果
+    if (water) {
+        water->update(deltaTime);
+        
+        // 获取蛇头位置和方向
+        glm::vec3 snakePos = snake->getHeadPosition();
+        glm::vec3 snakeDir = snake->getDirection();
+        
+        // 计算粒子生成位置（在蛇头前方）
+        glm::vec3 particleSpawnPos = snakePos + snakeDir * 5.0f;
+        
+        // 更新粒子系统
+        water->updateWaterParticles(deltaTime, particleSpawnPos);
+    }
     
     // 修改食物检测逻辑，使用更大的判定范围
     bool foodEaten = false;
@@ -396,6 +426,18 @@ void GameWidget::updateGame()
         water->update(deltaTime);
     }
     
+    // 调试输出蛇的位置
+    glm::vec3 snakePos = snake->getHeadPosition();
+    glm::vec3 snakeDir = snake->getDirection();
+    glm::vec3 particleCenter = snakePos + snakeDir * 200.0f;
+    
+    qDebug() << "Snake Position:" << snakePos.x << snakePos.y << snakePos.z;
+    qDebug() << "Particle Center:" << particleCenter.x << particleCenter.y << particleCenter.z;
+    
+    if (water) {
+        water->updateWaterParticles(deltaTime, particleCenter);
+    }
+    
     update();
 }
 
@@ -445,7 +487,7 @@ void GameWidget::updateCamera()
     glm::vec3 sideOffset = snakeRight * (CAMERA_SETTINGS.distance * SIDE_OFFSET_FACTOR);
     idealCameraPos += sideOffset;
     
-    // 平滑过渡到新的相机位置
+    // 平滑过渡到新的相机置
     cameraPos = glm::mix(cameraPos, idealCameraPos, CAMERA_SETTINGS.smoothFactor);
     
     // 计算并平滑过渡到新的观察点
@@ -566,7 +608,7 @@ void GameWidget::drawAquarium()
 
     // 绘制不透明的边界线框
     glLineWidth(8.0f);  // 更粗的边界线
-    glColor3f(0.0f, 0.7f, 1.0f);  // 更亮的蓝色边界
+    glColor3f(0.0f, 0.7f, 1.0f);  // 更亮的���色边界
     
     // 绘制12条边界线
     glBegin(GL_LINES);
@@ -663,7 +705,7 @@ void GameWidget::drawAquarium()
         // 动态调整透明度
         float alpha;
         if (!cameraInside) {
-            // 相机在外部时，面向相���的面完全透明
+            // 相机在外部时，面向相的面完全透明
             alpha = (dotProduct < 0.0f) ? 0.01f : baseAlpha;  // 更低的透明度
         } else {
             // 相机在内部时使用正常透明度
@@ -730,7 +772,7 @@ void GameWidget::initObstacles()
         float y = (float(rand()) / RAND_MAX * 2.0f - 1.0f) * range * 0.5f;
         float z = (float(rand()) / RAND_MAX * 2.0f - 1.0f) * range;
         
-        // 确保障碍物不会出现在蛇的初始位置附近
+        // 确保障碍物���会出现在蛇的初始位置附近
         if(glm::length(glm::vec3(x, y, z) - snake->getHeadPosition()) < 100.0f) {
             continue;
         }
@@ -765,7 +807,7 @@ void GameWidget::resetGame()
         snake->initializeGL();
     }
     
-    // 如果出界，强制移动到安全位置
+    // 如果出界，强移动到安全位置
     glm::vec3 newPos = snake->getHeadPosition();
     if(!isInAquarium(newPos)) {
         qDebug() << "WARNING: Reset position is out of bounds! Adjusting...";
@@ -896,7 +938,7 @@ void GameWidget::applyLightSettings() {
         // 设置光照颜色和强度
         float intensityFactor = light.intensity;
         if(isInAquarium(cameraPos) && cameraPos.y < 0) {
-            // 水下增强光照
+            // 水增强光照
             float depth = -cameraPos.y;
             float depthFactor = std::min(1.0f, depth / (aquariumSize * 0.5f));
             intensityFactor *= (1.0f - depthFactor * 0.3f); // 随深度轻微衰减
