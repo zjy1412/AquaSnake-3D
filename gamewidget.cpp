@@ -110,7 +110,7 @@ GameWidget::~GameWidget()
 // 简化初始化，确保能看到场景
 void GameWidget::initializeGL()
 {
-    // 首先���始化OpenGL函数
+    // 首先化OpenGL函数
     initializeOpenGLFunctions();
     glewInit();
 
@@ -153,7 +153,7 @@ void GameWidget::initializeGL()
     if(water) {
         qDebug() << "Water system initialized successfully";
         qDebug() << "Aquarium size:" << aquariumSize;
-        // 设置水���相机位置
+        // 设置水体机位置
         water->setCameraPosition(cameraPos);
     } else {
         qDebug() << "Failed to initialize water system!";
@@ -211,19 +211,19 @@ void GameWidget::paintGL() {
     // 2. 绘制场景对象
     drawSceneObjects();
     
-    // 3. 渲染水体
+    // 3. 渲染水体和水下效果
     if(water) {
         // 保存当前状态
         glPushAttrib(GL_ALL_ATTRIB_BITS);
         
-        // 渲染水体表面
-        water->render(projectionMatrix, viewMatrix);
-        
-        // 如果在水下，渲染水下效果
         if(isUnderwater) {
+            // 如果在水下，先渲染水下效果
             water->renderUnderwaterEffects(projectionMatrix, viewMatrix);
             renderUnderwaterEffects(); // 渲染额外的水下效果
         }
+        
+        // 渲染水体表面
+        water->render(projectionMatrix, viewMatrix);
         
         // 渲染水粒子
         water->renderWaterParticles();
@@ -262,7 +262,7 @@ void GameWidget::drawSceneObjects()
         obstacle.draw();
     }
 
-    // 绘制食物
+    //绘制食物
     for(const auto& food : foods) {
         // 设置物材质
         glColor4f(1.0f, 0.5f, 0.0f, 1.0f);  // 橙色基础颜色
@@ -450,7 +450,7 @@ void GameWidget::updateCamera()
         rotationSmoothFactor
     );
     
-    // 应用旋转获取相机位置
+    // 应用旋转获取相机置
     glm::mat4 rotationMatrix = glm::mat4_cast(currentCameraRotation);
     glm::vec3 baseOffset = glm::vec3(
         0.0f,
@@ -612,7 +612,7 @@ void GameWidget::drawAquarium()
     glVertex3f(aquariumSize, -hs, aquariumSize); glVertex3f(aquariumSize, hs, aquariumSize);
     glEnd();
 
-    // 修改深度测试设置并绘制透明面
+    // 修深度测试设置并绘制透明面
     glDepthMask(GL_FALSE);  // 禁用深度写入
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -685,7 +685,7 @@ void GameWidget::drawAquarium()
         float alpha;
         if (!cameraInside) {
             // 相机在外部时，面向相的面完全透明
-            alpha = (dotProduct < 0.0f) ? 0.01f : baseAlpha;  // 更低的透明度
+            alpha = (dotProduct < 0.0f) ? 0.01f : baseAlpha;  // 低的透明度
         } else {
             // 相机在内部时使用正常透明度
             alpha = baseAlpha;
@@ -751,7 +751,7 @@ void GameWidget::initObstacles()
         float y = (float(rand()) / RAND_MAX * 2.0f - 1.0f) * range * 0.5f;
         float z = (float(rand()) / RAND_MAX * 2.0f - 1.0f) * range;
         
-        // 确保障物会出现在蛇的初始位置附近
+        // 确保障会出现在蛇的初始位置附近
         if(glm::length(glm::vec3(x, y, z) - snake->getHeadPosition()) < 100.0f) {
             continue;
         }
@@ -890,7 +890,7 @@ void GameWidget::applyLightSettings() {
         glDisable(GL_LIGHT0 + i);
     }
 
-    // 应用每个光源
+    // 应用个光源
     for(size_t i = 0; i < numLights; ++i) {
         const auto& light = lightSources[i];
         GLenum lightEnum = GL_LIGHT0 + i;
@@ -966,7 +966,7 @@ void GameWidget::updateLights() {
     float time = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count() / 1000.0f;
     
     // 更新光束位置和方向
-    for(size_t i = 4; i < 7; ++i) {  // 更新三束光柱
+    for(size_t i = 4; i < 7; ++i) {  // 更新束光柱
         if(i >= lightSources.size()) continue;
         
         float phase = time * 0.2f + (i - 4) * glm::pi<float>() * 0.3f;
@@ -1014,40 +1014,64 @@ void GameWidget::renderUnderwaterEffects() {
     // 保存当前状态
     glPushAttrib(GL_ALL_ATTRIB_BITS);
     
-    // 启用雾效
+    // 启用雾效但降低其强度
     glEnable(GL_FOG);
     glFogi(GL_FOG_MODE, GL_EXP2);
     
-    // 计算基于深度的雾效参数
-    float depth = water->getWaterHeight() - cameraPos.y;  // 使用Water类的方法获取水面高度
-    float fogDensity = underwaterEffects.fogDensity * (1.0f + depth * 0.0001f);
+    // 计算基于深度的雾效参数，但显著降低其影响
+    float depth = water->getWaterHeight() - cameraPos.y;
+    float depthFactor = std::min(1.0f, depth * 0.0001f);  // 进一步降低深度影响
     
-    // 设置雾效颜色和密度
-    glFogfv(GL_FOG_COLOR, glm::value_ptr(underwaterEffects.fogColor));
-    glFogf(GL_FOG_DENSITY, fogDensity);
-    
-    // 调整环境光以模拟深度效果
-    float depthFactor = std::min(1.0f, depth * underwaterEffects.depthDarkening);
-    float ambientIntensity = glm::mix(
-        underwaterEffects.maxAmbientLight,
-        underwaterEffects.minAmbientLight,
+    // 使用更柔和的雾效颜色
+    glm::vec3 fogColor = glm::mix(
+        glm::vec3(0.2f, 0.4f, 0.6f),  // 浅水颜色
+        glm::vec3(0.1f, 0.2f, 0.4f),  // 深水颜色
         depthFactor
     );
     
-    // 添加光线波动效果
-    static float time = 0.0f;
-    time += deltaTime;
-    float lightFlicker = 1.0f + sin(time * 2.0f) * 0.05f;
-    ambientIntensity *= lightFlicker;
+    // 设置雾效参数
+    float fogDensity = 0.0002f * (1.0f + depthFactor * 0.3f);  // 降低基础雾气密度
+    GLfloat fogCol[] = { fogColor.r, fogColor.g, fogColor.b, 1.0f };
+    glFogfv(GL_FOG_COLOR, fogCol);
+    glFogf(GL_FOG_DENSITY, fogDensity);
     
-    // 设置环境光
+    // 增强环境光以提高可见度
+    float ambientIntensity = glm::mix(0.8f, 0.4f, depthFactor);  // 增强环境光
     GLfloat ambient[] = {
-        ambientIntensity * underwaterEffects.fogColor.r,
-        ambientIntensity * underwaterEffects.fogColor.g,
-        ambientIntensity * underwaterEffects.fogColor.b,
+        ambientIntensity * 1.2f,
+        ambientIntensity * 1.2f,
+        ambientIntensity * 1.3f,
         1.0f
     };
     glLightModelfv(GL_LIGHT_MODEL_AMBIENT, ambient);
+    
+    // 添加水下色调
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+    // 渲染全屏色调叠加
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+    
+    glDisable(GL_DEPTH_TEST);
+    glBegin(GL_QUADS);
+    glColor4f(fogColor.r, fogColor.g, fogColor.b, 0.2f);  // 使用更低的透明度
+    glVertex2f(-1.0f, -1.0f);
+    glVertex2f( 1.0f, -1.0f);
+    glVertex2f( 1.0f,  1.0f);
+    glVertex2f(-1.0f,  1.0f);
+    glEnd();
+    glEnable(GL_DEPTH_TEST);
+    
+    // 恢复矩阵
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
     
     // 恢复状态
     glPopAttrib();

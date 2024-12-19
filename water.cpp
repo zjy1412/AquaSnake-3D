@@ -796,6 +796,31 @@ void Water::render(const glm::mat4& projection, const glm::mat4& view) {
     projectionMatrix = projection;
     viewMatrix = view;
     
+    // 检查是否在水下
+    bool isUnderwater = cameraPos.y < (size * 0.45f);
+    
+    if (!isUnderwater) {
+        // 水上渲染顺序：先渲染水体，再渲染粒子
+        renderWaterSurface(projection, view);
+        renderWaterParticles();
+        if(!bubbles.empty()) {
+            renderBubbles();
+        }
+    } else {
+        // 水下渲染顺序：先渲染粒子，再渲染水体
+        renderWaterParticles();
+        if(!bubbles.empty()) {
+            renderBubbles();
+        }
+        renderWaterSurface(projection, view);
+    }
+    
+    // 恢复状态
+    glPopAttrib();
+}
+
+// 新增函数：单独处理水面渲染
+void Water::renderWaterSurface(const glm::mat4& projection, const glm::mat4& view) {
     // 设置基本状态
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -843,86 +868,79 @@ void Water::render(const glm::mat4& projection, const glm::mat4& view) {
 
     // 恢复深度写入
     glDepthMask(GL_TRUE);
-
-    // 检查是否有气泡和粒子
+    
+    // 调试输出
     qDebug() << "\n=== Rendering State ===";
     qDebug() << "Camera position:" << cameraPos.x << cameraPos.y << cameraPos.z;
-    qDebug() << "Water height:" << waterHeight;  // 添加水面高度调试输出
-    qDebug() << "Bubble count:" << bubbles.size();
-    qDebug() << "Particle count:" << waterParticles.size();
-    qDebug() << "Is underwater:" << (cameraPos.y < waterHeight);  // 修改水下����态判断
-    
-    // ��染气泡和粒子
-    if(!bubbles.empty()) {
-        qDebug() << "Attempting to render" << bubbles.size() << "bubbles...";
-        renderBubbles();
-    } else {
-        qDebug() << "No bubbles to render!";
-    }
-    
-    // 恢复状态
-    glPopAttrib();
+    qDebug() << "Water height:" << waterHeight;
+    qDebug() << "Is underwater:" << (cameraPos.y < waterHeight);
 }
 
 void Water::renderUnderwaterEffects(const glm::mat4& projection, const glm::mat4& view) {
-    static glm::vec3 currentUnderwaterColor = waterParams.underwaterColor;
-    static float currentScatteringDensity = waterParams.underwaterScatteringDensity;
+    // 保存当前OpenGL状态
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
     
-    float waterHeight = size * 0.45f;  // 水面高度
+    // 获取水面高度和相机深度
+    float waterHeight = size * 0.45f;
+    float depth = waterHeight - cameraPos.y;
+    float depthFactor = std::min(1.0f, depth * 0.0002f); // 降低深度影响
     
-    if(cameraPos.y < waterHeight) {  // 使用水面高度判断
-        float depth = waterHeight - cameraPos.y;  // 计算与水面的深度差
-        
-        // 使用更温和的深度因子
-        float depthFactor = std::min(0.3f, depth * 0.001f);
-        
-        // 计算目标颜色
-        glm::vec3 targetColor = glm::mix(
-            waterParams.underwaterColor,
-            waterParams.deepColor,
-            depthFactor
-        );
-        
-        // 更快的颜色过渡
-        currentUnderwaterColor = glm::mix(
-            currentUnderwaterColor,
-            targetColor,
-            0.05f  // 增加过渡速度
-        );
-        
-        // 使用更温和的散射密度变化
-        float targetDensity = waterParams.underwaterScatteringDensity * 
-            (1.0f + depth * 0.0001f);  // 进一步降低深度影响
-            
-        currentScatteringDensity = glm::mix(
-            currentScatteringDensity,
-            targetDensity,
-            0.05f  // 增加过渡速度
-        );
-    }
+    // 1. 首先渲染体积光效果
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE);  // 使用加法混合
     
-    // 确保在每帧更新效果参数
-    glUseProgram(waterProgram);
+    // 使用体积光着色器
+    glUseProgram(volumetricProgram);
     
-    // 更新相��位置
-    glUniform3fv(glGetUniformLocation(waterProgram, "cameraPosition"), 1,
-                 glm::value_ptr(cameraPos));
-                 
-    // 更新水下效果参数
-    if(cameraPos.y < waterHeight) {  // 使用水面高度判断
-        float depth = waterHeight - cameraPos.y;  // 计算与水面的深度差
-        float adjustedDensity = waterParams.underwaterScatteringDensity * 
-                               (1.0f + depth * 0.0001f);  // 降低深度影响
-        
-        // 设置着色器参数
-        glUniform1f(glGetUniformLocation(waterProgram, "underwaterScatteringDensity"), 
-                   adjustedDensity);
-        glUniform3fv(glGetUniformLocation(waterProgram, "underwaterColor"),
-                    1, glm::value_ptr(currentUnderwaterColor));
-        glUniform1f(glGetUniformLocation(waterProgram, "waterDepth"),
-                   depth);
-    }
+    // 设置体积光参数
+    glUniform1f(glGetUniformLocation(volumetricProgram, "density"), 
+                volumetricParams.density * (1.0f - depthFactor * 0.5f));
+    glUniform1f(glGetUniformLocation(volumetricProgram, "exposure"), 
+                volumetricParams.exposure * (1.0f + depthFactor));
+    glUniform3fv(glGetUniformLocation(volumetricProgram, "lightColor"), 1,
+                 glm::value_ptr(volumetricParams.lightColor));
     
+    // 渲染体积光
+    glBindVertexArray(volumetricVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    
+    // 2. 渲染焦散效果
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, causticTexture);
+    
+    float causticIntensity = waterParams.causticIntensity * (1.0f - depthFactor * 0.3f);
+    glColor4f(1.0f, 1.0f, 1.0f, causticIntensity);
+    
+    // 渲染焦散平面
+    glBegin(GL_QUADS);
+    float size = this->size * 1.5f;
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(-size, -size, -size);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f( size, -size, -size);
+    glTexCoord2f(1.0f, 1.0f); glVertex3f( size, -size,  size);
+    glTexCoord2f(0.0f, 1.0f); glVertex3f(-size, -size,  size);
+    glEnd();
+    
+    // 3. 应用水下色调和雾效果
+    glEnable(GL_FOG);
+    glFogi(GL_FOG_MODE, GL_EXP2);
+    
+    // 计算基于深��的雾色和密度
+    glm::vec3 fogColor = glm::mix(
+        waterParams.shallowColor * 0.7f,
+        waterParams.deepColor * 0.5f,
+        depthFactor
+    );
+    
+    float fogDensity = 0.0005f * (1.0f + depthFactor * 0.5f);
+    glFogfv(GL_FOG_COLOR, glm::value_ptr(fogColor));
+    glFogf(GL_FOG_DENSITY, fogDensity);
+    
+    // 4. 渲染水下粒子
+    renderWaterParticles();
+    
+    // 恢复OpenGL状态
+    glPopAttrib();
     glUseProgram(0);
 }
 
@@ -1288,7 +1306,6 @@ void Water::renderBubbles() {
 void Water::renderWaterParticles() {
     // 调试输出
     qDebug() << "Rendering water particles... Count:" << waterParticles.size();
-    qDebug() << "Particle size range:" << PARTICLE_MIN_SIZE << " - " << PARTICLE_MAX_SIZE;
     
     // 保存当前OpenGL状态
     glPushAttrib(GL_ALL_ATTRIB_BITS);
@@ -1298,18 +1315,14 @@ void Water::renderWaterParticles() {
     glEnable(GL_PROGRAM_POINT_SIZE);
     glEnable(GL_VERTEX_PROGRAM_POINT_SIZE);
     
-    // 获取并输出点大小范围
-    GLfloat sizes[2];
-    glGetFloatv(GL_POINT_SIZE_RANGE, sizes);
-    qDebug() << "OpenGL point size range:" << sizes[0] << " - " << sizes[1];
-    
     // 启用混合
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE);  // 使用加法混合以增强可见性
     
-    // 禁用深度写入但保持深度测试
-    glDepthMask(GL_FALSE);
+    // 修改深度测试设置 - 关键修改
     glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_ALWAYS);  // 始终通过深度测试，确保粒子总是可见
+    glDepthMask(GL_FALSE);   // 禁用深度写入
     
     // 绑定粒子纹理
     glEnable(GL_TEXTURE_2D);
@@ -1319,15 +1332,18 @@ void Water::renderWaterParticles() {
     glTexEnvi(GL_POINT_SPRITE, GL_COORD_REPLACE, GL_TRUE);
     
     // 设置点大小范围
-    glPointSize(PARTICLE_MAX_SIZE);  // 设置最大点大小
+    glPointSize(PARTICLE_MAX_SIZE * 2.0f);
     
     // 设置点大小衰减
-    GLfloat quadratic[] = { 0.0f, 0.0f, 0.00001f };  // 减小衰减系数
+    GLfloat quadratic[] = { 0.0f, 0.0f, 0.000005f };
     glPointParameterfv(GL_POINT_DISTANCE_ATTENUATION, quadratic);
     
     // 开始渲染粒子
     glBegin(GL_POINTS);
     int visibleParticles = 0;
+    float waterHeight = size * 0.45f;
+    bool isUnderwater = cameraPos.y < waterHeight;
+    
     for(const auto& particle : waterParticles) {
         if(particle.life <= 0.0f) continue;
         
@@ -1338,32 +1354,26 @@ void Water::renderWaterParticles() {
         // 改进距离衰减计算
         float sizeScale = 1.0f;
         if(distanceToCamera > 0.0f) {
-            sizeScale = std::min(2.0f, 2000.0f / distanceToCamera);
+            sizeScale = std::min(3.0f, 2000.0f / distanceToCamera);
         }
         
         // 确保粒子大小在有效范围内
         float finalSize = particle.size * sizeScale;
-        finalSize = std::max(PARTICLE_MIN_SIZE, std::min(PARTICLE_MAX_SIZE, finalSize));
+        finalSize = std::max(PARTICLE_MIN_SIZE, std::min(PARTICLE_MAX_SIZE * 2.0f, finalSize));
         
         // 设置粒子大小
         glPointSize(finalSize);
         
+        // 调整水下粒子的颜色和透明度
+        float alpha = particle.alpha;
+        
         // 设置粒子颜色和透明度
         glColor4f(
-            particle.color.r,
+            particle.color.r,  // 增强颜色
             particle.color.g,
             particle.color.b,
-            particle.alpha * std::min(1.0f, sizeScale)  // 根据距离调整透明度
+            alpha * std::min(1.0f, sizeScale)
         );
-        
-        // 输出一些粒子的大小信息（仅输出前几个粒子）
-        if(visibleParticles < 5) {
-            qDebug() << "Particle" << visibleParticles 
-                     << "original size:" << particle.size
-                     << "final size:" << finalSize 
-                     << "distance:" << distanceToCamera 
-                     << "scale:" << sizeScale;
-        }
         
         // 渲染粒子
         glVertex3f(
@@ -1376,9 +1386,13 @@ void Water::renderWaterParticles() {
     }
     glEnd();
     
-    qDebug() << "Visible particles rendered:" << visibleParticles;
+    qDebug() << "Visible particles rendered:" << visibleParticles
+             << "Is underwater:" << isUnderwater
+             << "Camera Y:" << cameraPos.y
+             << "Water height:" << waterHeight;
     
     // 恢复OpenGL状态
+    glDepthFunc(GL_LESS);  // 恢复默认深度测试函数
     glDepthMask(GL_TRUE);
     glDisable(GL_POINT_SPRITE);
     glDisable(GL_PROGRAM_POINT_SIZE);
@@ -1743,7 +1757,7 @@ void Water::updateWaterParticles(float deltaTime, const glm::vec3& targetPos) {
         // 更新位置
         particle.position += particle.velocity * deltaTime;
         
-        // 使用PARTICLE_FADE_TIME进行淡入淡出
+        // 使用PARTICLE_FADE_TIME进行淡入淡��
         if (particle.life > particle.fadeState + PARTICLE_FADE_TIME) {
             // 淡入阶段
             if (particle.fadeState < PARTICLE_FADE_TIME) {

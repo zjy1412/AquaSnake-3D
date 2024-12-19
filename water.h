@@ -25,6 +25,7 @@ public:
     void renderWaterParticles();
     void setCameraPosition(const glm::vec3& pos);
     void updateWaterParticles(float deltaTime, const glm::vec3& snakePosition);
+    void renderWaterSurface(const glm::mat4& projection, const glm::mat4& view);
 
     // 添加获取水面高度的方法
     float getWaterHeight() const { return waterHeight; }
@@ -46,7 +47,7 @@ public:
         float chromaDispersion = 0.02f;         // 增强色散效果
         float waterDensity = 0.0008f;           // 增加水密度
         float visibilityFalloff = 0.15f;        // 增加能见度衰减
-        float causticScale = 1.0f;              // 增大焦散尺寸
+        float causticScale = 1.0f;              // 增大���散尺寸
         float causticSpeed = 0.7f;              // 加快焦散动画
         float causticBlend = 0.8f;              // 增强焦散混合
         int causticLayers = 4;                  // 增加焦散层数
@@ -241,12 +242,12 @@ private:
     void saveGLState();
     void restoreGLState();
 
-    // 添加体积光参数
+    // ��加体积光参数
     struct VolumetricLightParams {
         float density = 0.8f;         // 增加密度
         float scattering = 0.7f;      // 散射系数
         float exposure = 1.5f;        // 增强曝光
-        float decay = 0.98f;          // 提高衰��系数，使线更久
+        float decay = 0.98f;          // 提高衰减系数，使线更久
         int numSamples = 100;         // 采样数量
         glm::vec3 lightColor = glm::vec3(1.0f, 0.98f, 0.95f); // 温暖的光线颜色
     };
@@ -270,13 +271,13 @@ private:
     void updateBubble(Bubble& bubble, float deltaTime);
 
     // 水下颗粒系统参数
-    static constexpr int MAX_WATER_PARTICLES = 2000;     // 增加粒子数量
+    static constexpr int MAX_WATER_PARTICLES = 1000;     // 增加粒子数量
     static constexpr float PARTICLE_MIN_SIZE = 2.0f;     // 增加最小粒子尺寸
-    static constexpr float PARTICLE_MAX_SIZE = 15.0f;     // 增加最大粒子尺寸
+    static constexpr float PARTICLE_MAX_SIZE = 12.0f;     // 增加最大粒子尺寸
     static constexpr float PARTICLE_MIN_ALPHA = 0.3f;    // 增加最小透明度
     static constexpr float PARTICLE_MAX_ALPHA = 0.8f;    // 增加最大透明度
     static constexpr float PARTICLE_FADE_TIME = 3.0f;    // 增加淡入淡出时间
-    static constexpr float PARTICLE_SPAWN_RADIUS = 600.0f; // 增加生成范围
+    static constexpr float PARTICLE_SPAWN_RADIUS = 900.0f; // 增加生成范围
     static constexpr float PARTICLE_SPAWN_HEIGHT = 300.0f; // 增加高度范围
     static constexpr float PARTICLE_LIFE_MIN = 3.0f;     // 增加最小生命周期
     static constexpr float PARTICLE_LIFE_MAX = 6.0f;     // 增加最大生命周期
