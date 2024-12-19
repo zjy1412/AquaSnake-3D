@@ -27,7 +27,7 @@ GameWidget::GameWidget(QWidget *parent)
     , projectionMatrix(1.0f)
     , viewMatrix(1.0f)
     , aquariumSize(AQUARIUM_DEFAULT_SIZE)  // 确保这个在使用前初始化
-    , gameOver(false)
+    , isGameOver(false)
     , waterLevel(0.0f)
     , waterShader(0)
     , gameState(GameState::READY)  // 改为 READY 状态
@@ -47,6 +47,7 @@ GameWidget::GameWidget(QWidget *parent)
     , bubbleTexture(0)
     , causticTime(0.0f)
     , bubblePositions()  // 初始化气泡位置数组
+    , currentCameraMode(CameraMode::FOLLOW)
 {
     // 初始化定时器
     gameTimer = new QTimer(this);
@@ -71,6 +72,9 @@ GameWidget::GameWidget(QWidget *parent)
     // 设置相机位置
     cameraTarget = snake->getHeadPosition();
     cameraPos = cameraTarget + glm::vec3(0.0f, 15.0f, 15.0f);
+
+    // 发送初始长度
+    emit lengthChanged(snake->getBody().size());
 
     // 生成食物
     spawnFood();
@@ -197,8 +201,8 @@ void GameWidget::paintGL() {
     glMatrixMode(GL_MODELVIEW);
     glLoadMatrixf(glm::value_ptr(viewMatrix));
     
-    // 检查是否在水下
-    bool isUnderwater = water ? water->isUnderwater(cameraPos) : false;
+    // 检查是否在水下，同时确保游戏状态为PLAYING
+    bool isUnderwater = water && gameState == GameState::PLAYING && water->isUnderwater(cameraPos);
     
     if(isUnderwater && water) {
         // 在水下时，先应用水下效果
@@ -225,7 +229,7 @@ void GameWidget::paintGL() {
         // 渲染水体表面
         water->render(projectionMatrix, viewMatrix);
         
-        // 渲染水粒子
+        // 渲染粒子
         water->renderWaterParticles();
         
         // 恢复状态
@@ -247,11 +251,11 @@ void GameWidget::drawSceneObjects()
     glPushAttrib(GL_ALL_ATTRIB_BITS);
     glPushMatrix();
     
-    // 重新确保光照启用
+    // 重新确保光照用
     glEnable(GL_LIGHTING);
     glEnable(GL_COLOR_MATERIAL);
     
-    // 绘制障碍物
+    // 绘制障���物
     for(const auto& obstacle : obstacles) {
         // 设置物体材质
         glColor4f(0.6f, 0.6f, 0.6f, 1.0f);  // 基础颜色
@@ -297,6 +301,13 @@ void GameWidget::keyPressEvent(QKeyEvent *event)
         return;
     }
 
+    // 添加相机模式切换按键 (V键)
+    if (event->key() == Qt::Key_V) {
+        currentCameraMode = (currentCameraMode == CameraMode::FOLLOW) ? 
+                           CameraMode::TOP_DOWN : CameraMode::FOLLOW;
+        return;
+    }
+
     if(gameState != GameState::PLAYING || !snake) return;
 
     const float ROTATION_ANGLE = glm::radians(90.0f);
@@ -324,20 +335,21 @@ void GameWidget::updateGame()
 {
     if(gameState != GameState::PLAYING || !snake) return;
     
-    // 预判下一个置
+    // 预判下一个位置
     glm::vec3 nextPos = snake->getHeadPosition() + 
                         glm::normalize(snake->getDirection()) * 
                         snake->getMovementSpeed();
     
-    // 如果下一个位置会出界，停止移动
+    // 如果下一个位��会出界，不移动蛇，等待新的输入
     if(!isInAquarium(nextPos)) {
-        qDebug() << "Prevented out-of-bounds movement at:" 
-                 << nextPos.x << nextPos.y << nextPos.z;
-        return;
+        return;  // 直接返回，不结束游戏
     }
 
     // 移动蛇
     snake->move();
+    
+    // 更新并发送当前长度
+    emit lengthChanged(snake->getBody().size());
     
     // 更新水体和粒子效果
     if (water) {
@@ -354,7 +366,7 @@ void GameWidget::updateGame()
         water->updateWaterParticles(deltaTime, particleSpawnPos);
     }
     
-    // 修改食物检测逻辑，使用更大的判定范围
+    // 检查食物碰撞
     bool foodEaten = false;
     std::vector<size_t> foodToRemove;
     
@@ -363,7 +375,6 @@ void GameWidget::updateGame()
         float collisionDistance = snake->getSegmentSize() * FOOD_COLLISION_MULTIPLIER;
         float distance = glm::distance(snake->getHeadPosition(), foods[i].getPosition());
         
-        // 使判定范围更大
         if (distance < collisionDistance) {
             foodToRemove.push_back(i);
             foodEaten = true;
@@ -373,6 +384,7 @@ void GameWidget::updateGame()
     // 如果吃到了食物
     if(foodEaten) {
         score += 10 * foodToRemove.size();
+        emit scoreChanged(score);
         
         // 从后向前移除食物
         for(auto it = foodToRemove.rbegin(); it != foodToRemove.rend(); ++it) {
@@ -381,10 +393,12 @@ void GameWidget::updateGame()
             }
         }
         
-        // 让蛇生长
+        // 让蛇长
         for(size_t i = 0; i < foodToRemove.size() * Snake::GROWTH_FACTOR; ++i) {
             snake->grow();
         }
+        
+        emit lengthChanged(snake->getBody().size());
         
         // 设置无敌帧
         invincibleFrames = INVINCIBLE_FRAMES_AFTER_FOOD;
@@ -400,21 +414,9 @@ void GameWidget::updateGame()
         checkCollisions();
     }
     
-    // 更新水体，使用正确的deltaTime
+    // 更新水体
     if (water) {
         water->update(deltaTime);
-    }
-    
-    // 调试输出蛇的位置
-    glm::vec3 snakePos = snake->getHeadPosition();
-    glm::vec3 snakeDir = snake->getDirection();
-    glm::vec3 particleCenter = snakePos + snakeDir * 200.0f;
-    
-    qDebug() << "Snake Position:" << snakePos.x << snakePos.y << snakePos.z;
-    qDebug() << "Particle Center:" << particleCenter.x << particleCenter.y << particleCenter.z;
-    
-    if (water) {
-        water->updateWaterParticles(deltaTime, particleCenter);
     }
     
     update();
@@ -429,67 +431,75 @@ void GameWidget::updateCamera()
     glm::vec3 snakeUp = snake->getUpDirection();
     glm::vec3 snakeRight = snake->getRightDirection();
 
-    // 计算目标相机旋转
-    glm::vec3 idealLookDir = -snakeDir;  // 相机应该看向蛇头的反方向
-    glm::vec3 idealUp = snakeUp;
-    
-    // 构建目标旋转矩
-    glm::mat3 targetRotationMat = glm::mat3(
-        glm::cross(idealLookDir, idealUp),  // right
-        idealUp,                            // up
-        -idealLookDir                       // forward
-    );
-    
-    // 转换为四元数
-    targetCameraRotation = glm::quat_cast(targetRotationMat);
-    
-    // 平滑插值当前旋转到目标旋转
-    currentCameraRotation = glm::slerp(
-        currentCameraRotation,
-        targetCameraRotation,
-        rotationSmoothFactor
-    );
-    
-    // 应用旋转获取相机置
-    glm::mat4 rotationMatrix = glm::mat4_cast(currentCameraRotation);
-    glm::vec3 baseOffset = glm::vec3(
-        0.0f,
-        CAMERA_SETTINGS.minHeight * 0.5f,  // 减小高度偏移
-        -CAMERA_SETTINGS.distance * 0.4f    // 减小距离到原来的0.4倍
-    );
-    
-    // 计算相机位置和观察点
-    glm::vec3 rotatedOffset = glm::vec3(rotationMatrix * glm::vec4(baseOffset, 1.0f));
-    glm::vec3 idealCameraPos = snakeHead + rotatedOffset;
-    
-    // 添加侧向偏移
-    glm::vec3 sideOffset = snakeRight * (CAMERA_SETTINGS.distance * SIDE_OFFSET_FACTOR);
-    idealCameraPos += sideOffset;
-    
-    // 平滑过渡到新的相机置
-    cameraPos = glm::mix(cameraPos, idealCameraPos, CAMERA_SETTINGS.smoothFactor);
-    
-    // 计算并平滑过渡到新的观察点
-    glm::vec3 idealLookAtPoint = snakeHead 
-        + snakeDir * (FORWARD_OFFSET * 0.5f)  // 减小前方观察点偏移到原来的0.5倍
-        + snakeUp * (CAMERA_SETTINGS.minHeight * 0.1f);  // 减小上方偏移
-    
-    cameraTarget = glm::mix(cameraTarget, idealLookAtPoint, CAMERA_SETTINGS.smoothFactor);
+    if (currentCameraMode == CameraMode::TOP_DOWN) {
+        // 俯视视角的相机位置计算
+        glm::vec3 idealCameraPos = snakeHead + glm::vec3(0.0f, TOP_DOWN_HEIGHT, 0.0f);
+        
+        // 平滑过渡到新的相机位置
+        cameraPos = glm::mix(cameraPos, idealCameraPos, TOP_DOWN_SMOOTH_FACTOR);
+        
+        // 相机始终看向蛇头，保持固定的上方向
+        cameraTarget = glm::mix(cameraTarget, snakeHead, TOP_DOWN_SMOOTH_FACTOR);
+        
+        // 构建视图矩阵，使用固定的世界空间上方向
+        viewMatrix = glm::lookAt(
+            cameraPos,
+            cameraTarget,
+            glm::vec3(0.0f, 0.0f, -1.0f)  // 固定世界空间上方
+        );
+    } else {
+        // 原有的跟随视角逻辑
+        glm::vec3 idealLookDir = -snakeDir;
+        glm::vec3 idealUp = snakeUp;
+        
+        glm::mat3 targetRotationMat = glm::mat3(
+            glm::cross(idealLookDir, idealUp),
+            idealUp,
+            -idealLookDir
+        );
+        
+        targetCameraRotation = glm::quat_cast(targetRotationMat);
+        currentCameraRotation = glm::slerp(
+            currentCameraRotation,
+            targetCameraRotation,
+            rotationSmoothFactor
+        );
+        
+        glm::mat4 rotationMatrix = glm::mat4_cast(currentCameraRotation);
+        glm::vec3 baseOffset = glm::vec3(
+            0.0f,
+            CAMERA_SETTINGS.minHeight * 0.5f,
+            -CAMERA_SETTINGS.distance * 0.4f
+        );
+        
+        glm::vec3 rotatedOffset = glm::vec3(rotationMatrix * glm::vec4(baseOffset, 1.0f));
+        glm::vec3 idealCameraPos = snakeHead + rotatedOffset;
+        
+        glm::vec3 sideOffset = snakeRight * (CAMERA_SETTINGS.distance * SIDE_OFFSET_FACTOR);
+        idealCameraPos += sideOffset;
+        
+        cameraPos = glm::mix(cameraPos, idealCameraPos, CAMERA_SETTINGS.smoothFactor);
+        
+        glm::vec3 idealLookAtPoint = snakeHead 
+            + snakeDir * (FORWARD_OFFSET * 0.5f)
+            + snakeUp * (CAMERA_SETTINGS.minHeight * 0.1f);
+        
+        cameraTarget = glm::mix(cameraTarget, idealLookAtPoint, CAMERA_SETTINGS.smoothFactor);
 
-    // 构建视图矩阵
-    viewMatrix = glm::lookAt(
-        cameraPos,
-        cameraTarget,
-        glm::vec3(glm::mat4_cast(currentCameraRotation) * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f))
-    );
+        viewMatrix = glm::lookAt(
+            cameraPos,
+            cameraTarget,
+            glm::vec3(glm::mat4_cast(currentCameraRotation) * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f))
+        );
+    }
 
     // 修改投影矩阵
     float aspect = width() / static_cast<float>(height());
     projectionMatrix = glm::perspective(
         glm::radians(currentFOV),
         aspect,
-        1.0f,                // 减小近平面距离
-        10000.0f             // 大幅增加远平面距离
+        1.0f,
+        10000.0f
     );
 }
 
@@ -605,7 +615,7 @@ void GameWidget::drawAquarium()
     glVertex3f(-aquariumSize, hs, -aquariumSize); glVertex3f(-aquariumSize, hs, aquariumSize);
     glVertex3f(aquariumSize, hs, -aquariumSize); glVertex3f(aquariumSize, hs, aquariumSize);
     
-    // 竖直四条线
+    // 直四条线
     glVertex3f(-aquariumSize, -hs, -aquariumSize); glVertex3f(-aquariumSize, hs, -aquariumSize);
     glVertex3f(aquariumSize, -hs, -aquariumSize); glVertex3f(aquariumSize, hs, -aquariumSize);
     glVertex3f(-aquariumSize, -hs, aquariumSize); glVertex3f(-aquariumSize, hs, aquariumSize);
@@ -639,7 +649,7 @@ void GameWidget::drawAquarium()
         Face face;
         face.index = i;
         
-        // 设置面的法线和中心点
+        // 设置面的法线和中点
         switch(i) {
             case 0: // 前面 (Z+)
                 face.normal = glm::vec3(0.0f, 0.0f, 1.0f);
@@ -738,7 +748,7 @@ void GameWidget::drawAquarium()
     // 恢复OpenGL状态
     glEnable(GL_CULL_FACE);
     glDisable(GL_BLEND);
-    glDepthMask(GL_TRUE);   // 重新启用深度写入
+    glDepthMask(GL_TRUE);   // 新启用深度写入
     glLineWidth(1.0f);
 }
 
@@ -767,26 +777,23 @@ void GameWidget::resetGame()
 
     // 设置状态（只设置一次）
     gameState = GameState::PLAYING;
-    gameOver = false;
+    isGameOver = false;
     score = 0;
+    emit scoreChanged(score);
     
     qDebug() << "Game state reset to PLAYING:" << static_cast<int>(gameState);
-
-    // 重置游戏状态
-    gameState = GameState::PLAYING;
-    gameOver = false;
-    score = 0;
 
     // 删除旧的蛇并创建新的
     delete snake;
     snake = new Snake(-5.0f, 0.0f, 0.0f);
+    emit lengthChanged(snake->getBody().size());
     
-    // 如果OpenGL已初始化，则初始化蛇的OpenGL函数
+    // 如果OpenGL已初始化，则初始化蛇的OpenGL函��
     if (context() && context()->isValid()) {
         snake->initializeGL();
     }
     
-    // 如果出界，强移动到安全位置
+    // 如果出界，移动到安全位置
     glm::vec3 newPos = snake->getHeadPosition();
     if(!isInAquarium(newPos)) {
         qDebug() << "WARNING: Reset position is out of bounds! Adjusting...";
@@ -822,16 +829,16 @@ void GameWidget::checkCollisions()
     
     const glm::vec3& headPos = snake->getHeadPosition();
     
-    // 检查与障碍物的碰撞 - 使用渐进式判定
+    // 检查与障碍物的碰撞
     for(const auto& obstacle : obstacles) {
-        float distance = glm::length(headPos - obstacle.getPosition());
+        float collisionDistance = glm::length(headPos - obstacle.getPosition());
         float collisionRange = (snake->getSegmentSize() + obstacle.getRadius()) * OBSTACLE_COLLISION_MULTIPLIER;
         
-        // 根据距离计算碰撞概率
-        if(distance < collisionRange) {
-            qDebug() << "Game over! Collision with obstacle at distance:" << distance;
+        if(collisionDistance < collisionRange) {
+            qDebug() << "Game over! Collision with obstacle at distance:" << collisionDistance;
             gameState = GameState::GAME_OVER;
-            gameOver = true;
+            isGameOver = true;
+            emit gameOver();
             return;
         }
     }
@@ -840,7 +847,8 @@ void GameWidget::checkCollisions()
     if(snake->checkSelfCollision()) {
         qDebug() << "Game over! Self collision";
         gameState = GameState::GAME_OVER;
-        gameOver = true;
+        isGameOver = true;
+        emit gameOver();
         return;
     }
 }
@@ -1029,7 +1037,7 @@ void GameWidget::renderUnderwaterEffects() {
         depthFactor
     );
     
-    // 设置雾效参数
+    // 设置��效参数
     float fogDensity = 0.0002f * (1.0f + depthFactor * 0.3f);  // 降低基础雾气密度
     GLfloat fogCol[] = { fogColor.r, fogColor.g, fogColor.b, 1.0f };
     glFogfv(GL_FOG_COLOR, fogCol);
@@ -1118,4 +1126,33 @@ void GameWidget::applyUnderwaterState() {
     
     // 恢复状态
     glPopAttrib();
+}
+
+// 添加暂停游戏功能
+void GameWidget::pauseGame()
+{
+    if(gameState == GameState::PLAYING) {
+        gameState = GameState::PAUSED;
+        gameTimer->stop();
+    }
+}
+
+// 添加继续游戏功能
+void GameWidget::resumeGame()
+{
+    if(gameState == GameState::PAUSED) {
+        gameState = GameState::PLAYING;
+        gameTimer->start(16);
+        setFocus();  // 重新获得焦点
+    }
+}
+
+// 在文件末尾添加 timerEvent 实现
+void GameWidget::timerEvent(QTimerEvent* event)
+{
+    if (gameState == GameState::PLAYING) {
+        updateGame();
+        updateCamera();
+        update();
+    }
 }

@@ -1,13 +1,13 @@
 #include <QApplication>
-#include "gamewidget.h"
+#include "ui.h"
 
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
     
-    GameWidget widget;
-    widget.resize(800, 600);
-    widget.show();
+    UIManager mainWindow;
+    mainWindow.setMinimumSize(1024, 768);
+    mainWindow.show();
     
     return app.exec();
 }

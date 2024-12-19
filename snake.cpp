@@ -5,21 +5,22 @@
 #include <cmath>
 #include <glm/glm.hpp>
 
-Snake::Snake(float startX, float startY, float startZ)
-    : direction(1.0f, 0.0f, 0.0f)
-    , targetDirection(1.0f, 0.0f, 0.0f)
-    , upDirection(0.0f, 1.0f, 0.0f)  // 初始上方向为世界空间的上
-    , segmentSize(DEFAULT_SEGMENT_SIZE)
+Snake::Snake(float x, float y, float z)
+    : segmentSize(DEFAULT_SEGMENT_SIZE)
     , moveSpeed(DEFAULT_MOVE_SPEED)
+    , direction(1.0f, 0.0f, 0.0f)
+    , targetDirection(direction)
+    , upDirection(0.0f, 1.0f, 0.0f)
 {
-    // 移除这里的 initializeOpenGLFunctions() 调用
-    // 使用传入的参数设置起始位置
-    glm::vec3 startPos(startX, startY, startZ);
-    body.push_back(startPos);
-
-    // 向左延伸初始身体，但长度更短
-    for(int i = 1; i < 3; ++i) {
-        body.push_back(startPos - glm::vec3(i * segmentSize, 0.0f, 0.0f));
+    // 设置初始位置
+    glm::vec3 initialPos(x, y, z);
+    
+    // 设置初始长度为3段
+    const int INITIAL_LENGTH = 3;
+    for(int i = 0; i < INITIAL_LENGTH; ++i) {
+        // 每一段都在前一段的后面，沿着-X方向排列
+        glm::vec3 segmentPos = initialPos - glm::vec3(i * segmentSize, 0.0f, 0.0f);
+        body.push_back(segmentPos);
     }
 }
 

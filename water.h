@@ -273,13 +273,13 @@ private:
     // 水下颗粒系统参数
     static constexpr int MAX_WATER_PARTICLES = 1000;     // 增加粒子数量
     static constexpr float PARTICLE_MIN_SIZE = 2.0f;     // 增加最小粒子尺寸
-    static constexpr float PARTICLE_MAX_SIZE = 12.0f;     // 增加最大粒子尺寸
+    static constexpr float PARTICLE_MAX_SIZE = 8.0f;     // 增加最大粒子尺寸
     static constexpr float PARTICLE_MIN_ALPHA = 0.3f;    // 增加最小透明度
     static constexpr float PARTICLE_MAX_ALPHA = 0.8f;    // 增加最大透明度
     static constexpr float PARTICLE_FADE_TIME = 3.0f;    // 增加淡入淡出时间
     static constexpr float PARTICLE_SPAWN_RADIUS = 900.0f; // 增加生成范围
     static constexpr float PARTICLE_SPAWN_HEIGHT = 300.0f; // 增加高度范围
-    static constexpr float PARTICLE_LIFE_MIN = 3.0f;     // 增加最小生命周期
+    static constexpr float PARTICLE_LIFE_MIN = 2.0f;     // 增加最小生命周期
     static constexpr float PARTICLE_LIFE_MAX = 6.0f;     // 增加最大生命周期
     
     std::vector<WaterParticle> waterParticles;

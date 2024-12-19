@@ -1,4 +1,3 @@
-
 #ifndef FOOD_H
 #define FOOD_H
 
@@ -7,7 +6,8 @@
 
 class Food {
 public:
-    Food(const glm::vec3& pos);
+    Food();  // 声明默认构造函数
+    Food(const glm::vec3& pos);  // 声明带参数的构造函数
     
     void draw() const;
     glm::vec3 getPosition() const { return position; }

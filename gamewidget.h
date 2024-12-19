@@ -1,7 +1,7 @@
 #ifndef GAMEWIDGET_H
 #define GAMEWIDGET_H
 
-#define GLM_ENABLE_EXPERIMENTAL  // 添加这行到最前面
+#define GLM_ENABLE_EXPERIMENTAL
 
 #include <GL/glew.h> 
 #include <QOpenGLWidget>
@@ -15,19 +15,44 @@
 #include "food.h"
 #include "water.h"  
 
+// 前向声明
+class MenuWidget;
+
 class GameWidget : public QOpenGLWidget, protected QOpenGLFunctions
 {
     Q_OBJECT
 
+    // 添加友元类声明
+    friend class MenuWidget;
+
 public:
     explicit GameWidget(QWidget *parent = nullptr);
     ~GameWidget();
+    void resetGame();
+    void pauseGame();
+    void resumeGame();
+    int getScore() const { return score; }
+    int getSnakeLength() const { return snake ? snake->getBody().size() : 3; }
+    bool isGamePaused() const { return gameState == GameState::PAUSED; }
+    
+    // 添加访问器方法
+    float getAquariumSize() const { return aquariumSize; }
+    const glm::mat4& getViewMatrix() const { return viewMatrix; }
+    const glm::mat4& getProjectionMatrix() const { return projectionMatrix; }
+    void setViewMatrix(const glm::mat4& matrix) { viewMatrix = matrix; }
+    void setProjectionMatrix(const glm::mat4& matrix) { projectionMatrix = matrix; }
+
+signals:
+    void scoreChanged(int newScore);
+    void lengthChanged(int newLength);
+    void gameOver();
 
 protected:
     void initializeGL() override;
     void resizeGL(int w, int h) override;
     void paintGL() override;
     void keyPressEvent(QKeyEvent *event) override;
+    void timerEvent(QTimerEvent *event) override;
 
 private:
     void initShaders();
@@ -40,7 +65,7 @@ private:
 
     QTimer* gameTimer;
     float rotationAngle;
-    float cameraDistance;    // 摄像机距离
+    float cameraDistance;    // 摄像机离
     float cameraHeight;      // 摄像机高度
     Snake* snake;
     glm::vec3 cameraPos;
@@ -48,7 +73,7 @@ private:
     glm::mat4 projectionMatrix;
     glm::mat4 viewMatrix;
     float aquariumSize;
-    bool gameOver;
+    bool isGameOver;  // 改名以避免与信号冲突
     std::vector<Obstacle> obstacles;
     void initObstacles();
     void checkCollisions();
@@ -58,14 +83,14 @@ private:
     void drawWater();
     float cameraAngle;    // 添加相机角度
     const float CAMERA_DEFAULT_ANGLE = -30.0f;  
-    const float DEFAULT_CAMERA_DISTANCE = -20.0f; // 减小相机距离从-50改为-20
-    const float DEFAULT_CAMERA_HEIGHT = 15.0f;    // 降低相机高度从30改为15
-    const float AQUARIUM_DEFAULT_SIZE = 5000.0f;   // 墛大水族箱尺寸到2000
-    const float SEGMENT_SIZE = 100.0f;  // 添加这行，用于检测碰撞
-    const float MIN_FOOD_DISTANCE = 400.0f;         // 食物最小间距
-    const int MAX_OBSTACLES = 100;                  // 最大障碍物数量
-    const int MIN_FOOD_COUNT = 100;                 // 场景中最少食物数量
-    std::vector<Food> foods;         // 改为存储多个食物位置
+    const float DEFAULT_CAMERA_DISTANCE = -20.0f;
+    const float DEFAULT_CAMERA_HEIGHT = 15.0f;
+    const float AQUARIUM_DEFAULT_SIZE = 5000.0f;
+    const float SEGMENT_SIZE = 100.0f;
+    const float MIN_FOOD_DISTANCE = 400.0f;
+    const int MAX_OBSTACLES = 100;
+    const int MIN_FOOD_COUNT = 100;
+    std::vector<Food> foods;
 
     enum class GameState {
         READY = 0,
@@ -77,7 +102,6 @@ private:
     GameState gameState;
     int score;
     bool isValidFoodPosition(const glm::vec3& pos) const;
-    void resetGame();
     
     // 相机插值参数
     glm::vec3 targetCameraPos;
@@ -139,7 +163,7 @@ private:
     float deltaTime;
 
     // 着色器源码
-    static const char* volumetricLightVertexShader;   // 体积光顶点着色器
+    static const char* volumetricLightVertexShader;   // 体积顶点着色器
     static const char* volumetricLightFragmentShader; // 体积光片段着色器
 
     // 资源句柄
@@ -215,6 +239,18 @@ private:
     // 添加新的私有函数声明
     void applyUnderwaterState();
     void drawSceneObjects();
+
+    // 添加相机模式枚举
+    enum class CameraMode {
+        FOLLOW,     // 跟随视角(原有视角)
+        TOP_DOWN    // 俯视视角
+    };
+    
+    CameraMode currentCameraMode = CameraMode::FOLLOW;  // 当前相机模式
+    
+    // 俯视相机参数
+    static constexpr float TOP_DOWN_HEIGHT = 1500.0f;   // 俯视高度
+    static constexpr float TOP_DOWN_SMOOTH_FACTOR = 0.1f;  // 平滑因子
 };
 
 #endif // GAMEWIDGET_H

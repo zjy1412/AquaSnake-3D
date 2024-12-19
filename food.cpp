@@ -1,7 +1,12 @@
-
 #include "food.h"
 #include <GL/glew.h>
 #include <cmath>
+
+Food::Food()
+    : position(0.0f)
+    , size(DEFAULT_SIZE)
+{
+}
 
 Food::Food(const glm::vec3& pos)
     : position(pos)

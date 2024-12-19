@@ -9,7 +9,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(QT_FEATURE_vulkan OFF)
 set(BUILD_WITH_VULKAN OFF)
 
-find_package(Qt6 COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets REQUIRED)
+find_package(Qt6 COMPONENTS 
+    Core 
+    Gui 
+    Widgets 
+    OpenGL 
+    OpenGLWidgets 
+    REQUIRED
+)
+
 find_package(OpenGL REQUIRED)
 
 set(SOURCES
@@ -19,6 +27,7 @@ set(SOURCES
     obstacle.cpp
     food.cpp
     water.cpp
+    ui.cpp
 )
 
 set(HEADERS
@@ -27,6 +36,7 @@ set(HEADERS
     obstacle.h
     food.h
     water.h
+    ui.h
 )
 
 set(GLEW_INCLUDE_DIR "D:/libraries/glew-2.2.0/include")
@@ -41,6 +51,8 @@ include_directories(${GLM_INCLUDE_DIR})
 include_directories(${GLEW_INCLUDE_DIR})
 
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+set(CMAKE_AUTOUIC ON)
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
