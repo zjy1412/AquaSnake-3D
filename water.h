@@ -15,56 +15,75 @@ public:
     ~Water();
     
     void init();
+    void initializeGL();
     void render(const glm::mat4& projection, const glm::mat4& view);
     void update(float deltaTime);
+    void renderUnderwaterEffects(const glm::mat4& projection, const glm::mat4& view);
+    void beginUnderwaterEffect(const glm::mat4& projection, const glm::mat4& view);
+    void endUnderwaterEffect();
     void updateBubbles(float deltaTime);
-    void renderVolumetricLight();
+    void renderWaterParticles();
+    void setCameraPosition(const glm::vec3& pos);
+    void updateWaterParticles(float deltaTime, const glm::vec3& snakePosition);
+
+    // 添加获取水面高度的方法
+    float getWaterHeight() const { return waterHeight; }
+    bool isUnderwater(const glm::vec3& position) const { return position.y < waterHeight; }
 
     struct WaterParams {
-        float causticIntensity = 0.3f;    
-        float waveHeight = 30.0f;          // 墛大波浪高度
-        float waveSpeed = 0.8f;           
-        float distortionStrength = 0.02f; 
-        float surfaceRoughness = 0.7f;    
-        glm::vec3 deepColor = glm::vec3(0.0f, 0.1f, 0.2f);
-        glm::vec3 shallowColor = glm::vec3(0.0f, 0.4f, 0.6f);
-        float volumetricLightIntensity = 0.3f;
-        float volumetricLightDecay = 0.95f;
-        float bubbleSpeed = 0.5f;
-        float bubbleDensity = 0.3f;
-        float lightBeamWidth = 15.0f;
-        float chromaDispersion = 0.015f;
-        float waterDensity = 0.0005f;      // 降低水密度（因为尺寸变大）
-        float visibilityFalloff = 0.1f;    // 调整能见度衰减
-        float causticScale = 0.8f;        // 焦散缩放
-        float causticSpeed = 0.5f;        // 焦散动画速度
-        float causticBlend = 0.6f;        // 焦散混合强度
-        int causticLayers = 3;            // 焦散叠加层数
+        float causticIntensity = 0.6f;        // 增强焦散强度
+        float waveHeight = 40.0f;             // 增加波浪高度
+        float waveSpeed = 1.2f;               // 加快波浪速度
+        float distortionStrength = 0.04f;     // 增强扭曲效果
+        float surfaceRoughness = 0.8f;        // 增加表面粗糙度
+        glm::vec3 deepColor = glm::vec3(0.0f, 0.15f, 0.3f);    // 加深深水颜色
+        glm::vec3 shallowColor = glm::vec3(0.1f, 0.5f, 0.7f);  // 调亮浅水颜色
+        float volumetricLightIntensity = 0.5f;  // 增强体积光
+        float volumetricLightDecay = 0.92f;     // 降低衰减
+        float bubbleSpeed = 0.8f;               // 加快气泡速度
+        float bubbleDensity = 0.5f;             // 增加气泡密度
+        float lightBeamWidth = 20.0f;           // 增加光束宽度
+        float chromaDispersion = 0.02f;         // 增强色散效果
+        float waterDensity = 0.0008f;           // 增加水密度
+        float visibilityFalloff = 0.15f;        // 增加能见度衰减
+        float causticScale = 1.0f;              // 增大焦散尺寸
+        float causticSpeed = 0.7f;              // 加快焦散动画
+        float causticBlend = 0.8f;              // 增强焦散混合
+        int causticLayers = 4;                  // 增加焦散层数
 
-        // 添加水下效果参数
-        float underwaterScatteringDensity = 0.05f;   // 增加散射密度
-        float underwaterVisibility = 5000.0f;  // 墛大水下能见度
-        float underwaterCausticIntensity = 1.2f;     // 墛强水下焦散
-        float underwaterGodrayIntensity = 0.6f;      // 墛强光束效果
-        float underwaterParticleDensity = 200.0f;    // 墛加粒子数量
-        glm::vec3 underwaterColor = glm::vec3(0.1f, 0.3f, 0.5f); // 加深水下颜色
+        // 增强水下效果参数
+        float underwaterScatteringDensity = 0.08f;    // 增加散射密度
+        float underwaterVisibility = 4000.0f;         // 调整水下能见度
+        float underwaterCausticIntensity = 1.5f;      // 增强水下焦散
+        float underwaterGodrayIntensity = 0.8f;       // 增强光束效果
+        float underwaterParticleDensity = 300.0f;     // 增加粒子数量
+        glm::vec3 underwaterColor = glm::vec3(0.15f, 0.35f, 0.6f); // 调整水下颜色
 
-        float lightPenetration = 0.8f;    // 墛加光线穿透率
-        float scatteringDensity = 0.3f;   // 降低散射密度
-        float causticStrength = 1.5f;     // 墛强焦散效
+        float lightPenetration = 0.85f;    // 增加光线穿透
+        float scatteringDensity = 0.4f;    // 增加散射密度
+        float causticStrength = 1.8f;      // 增强焦散效果
     };
 
     WaterParams& getParams() { return waterParams; }
 
     struct Bubble {
         glm::vec3 position;
-        float size;         // 气泡大小
-        float speed;        // 上升速度
-        float wobble;       // 左右摆动幅度
-        float phase;        // 摆动相位
-        float alpha;        // 透明度
-        float rotationSpeed;// 添加旋转速度
-        float rotation;     // 当前旋转角度
+        float size;         
+        float speed;        
+        float wobble;       
+        float phase;        
+        float alpha;        
+        float rotationSpeed;
+        float rotation;
+        
+        // 添加新的属性
+        float deformation;      // 气泡变形程度
+        float pulsePhase;      // 用于气泡脉动
+        float refractionIndex; // 折射率
+        float highlightIntensity; // 高光强度
+        bool merging;          // 是否正在合并
+        float mergeProgress;   // 合并进度
+        Bubble* mergingWith;   // 正在合并的目标气泡
     };
 
     // 添加水下颗粒结构体
@@ -80,21 +99,13 @@ public:
         float fadeState;    // 新增：淡入淡出状态
     };
 
-    // 添加设置相机位置的方法
-    void setCameraPosition(const glm::vec3& pos) { cameraPos = pos; }
-
     // 添加getter用于调试
     GLuint getCausticTexture() const { return causticTexture; }
     GLuint getVolumetricLightTexture() const { return volumetricLightTexture; }
     GLuint getWaterNormalTexture() const { return waterNormalTexture; }
     GLuint getBubbleTexture() const { return bubbleTexture; }
 
-    void initializeGL();  // 添加这个方法
 
-    // 添加新的水下效果管理方法
-    void beginUnderwaterEffect(const glm::mat4& proj, const glm::mat4& view);
-    void endUnderwaterEffect();
-    
     // 添加水下效果参数结构体
     struct UnderwaterState {
         bool isUnderwater;
@@ -112,10 +123,6 @@ public:
     
     UnderwaterState& getUnderwaterState() { return underwaterState; }
 
-    // 将这些方法移到 public 区域
-    void updateWaterParticles(float deltaTime, const glm::vec3& snakePosition);
-    void renderWaterParticles();
-
 protected:
     int width() const;
     int height() const;
@@ -127,6 +134,7 @@ private:
     void initVolumetricLight();
 
     float size;
+    float waterHeight;  // 添加水面高度成员变量
     WaterParams waterParams;
     float waterTime;
     GLuint waterProgram;
@@ -141,13 +149,14 @@ private:
     std::vector<glm::vec3> bubblePositions;  // 气泡位置数组
     std::vector<Bubble> bubbles;
     
-    // 调整气泡参数
-    static constexpr int MAX_BUBBLES = 500;         // 增加气泡数量
-    static constexpr float MIN_BUBBLE_SIZE = 8.0f;  // 增大最小气泡尺寸
-    static constexpr float MAX_BUBBLE_SIZE = 16.0f; // 增大最大气泡尺寸
-    static constexpr float BUBBLE_BASE_ALPHA = 0.9f;// 增加基础不透明度
-    static constexpr float BUBBLE_SPAWN_RATE = 0.05f;  // 增加生成率
-    static constexpr float BUBBLE_SPREAD_FACTOR = 1.2f; // 增加扩散因子
+    // 修改气泡参数
+    static constexpr int MAX_BUBBLES = 0;          // 适当减少气泡数量
+    static constexpr float MIN_BUBBLE_SIZE = 3.0f;   // 增大最小气泡尺寸
+    static constexpr float MAX_BUBBLE_SIZE = 8.0f;   // 增大最大气泡尺寸
+    static constexpr float BUBBLE_BASE_ALPHA = 0.8f; // 增加基础不透明度
+    static constexpr float MERGE_DISTANCE = 12.0f;   // 气泡合并距离
+    static constexpr float PULSE_SPEED = 2.0f;       // 气泡脉动速度
+    static constexpr float MAX_DEFORMATION = 0.3f;   // 最大变形程度
     float bubbleSpawnTimer;
 
     // 添加着色器源码声明
@@ -191,7 +200,6 @@ private:
     
     void initUnderwaterEffects();
     void updateUnderwaterParticles(float deltaTime);
-    void renderUnderwaterEffects(const glm::mat4& projection, const glm::mat4& view);
     void generateUnderwaterParticle(UnderwaterParticle& particle);
 
     // 添加调试辅助函数
@@ -233,12 +241,12 @@ private:
     void saveGLState();
     void restoreGLState();
 
-    // 添加体积光关参数
+    // 添加体积光参数
     struct VolumetricLightParams {
         float density = 0.8f;         // 增加密度
         float scattering = 0.7f;      // 散射系数
         float exposure = 1.5f;        // 增强曝光
-        float decay = 0.98f;          // 提高衰减系数，使光线更久
+        float decay = 0.98f;          // 提高衰��系数，使线更久
         int numSamples = 100;         // 采样数量
         glm::vec3 lightColor = glm::vec3(1.0f, 0.98f, 0.95f); // 温暖的光线颜色
     };
@@ -262,16 +270,16 @@ private:
     void updateBubble(Bubble& bubble, float deltaTime);
 
     // 水下颗粒系统参数
-    static constexpr int MAX_WATER_PARTICLES = 1000;      // 保持较多的粒子数量
-    static constexpr float PARTICLE_MIN_SIZE = 1.5f;      
-    static constexpr float PARTICLE_MAX_SIZE = 4.0f;      
-    static constexpr float PARTICLE_MIN_ALPHA = 0.0f;     // 最小透明度为0，用于淡入
-    static constexpr float PARTICLE_MAX_ALPHA = 0.2f;     
-    static constexpr float PARTICLE_FADE_TIME = 1.5f;     // 增加淡入淡出时间
-    static constexpr float PARTICLE_SPAWN_RADIUS = 450.0f; // 生成范围
-    static constexpr float PARTICLE_SPAWN_HEIGHT = 200.0f;  // 高度范围
-    static constexpr float PARTICLE_LIFE_MIN = 2.0f;      // 最小生命周期
-    static constexpr float PARTICLE_LIFE_MAX = 4.0f;      // 最大生命周期
+    static constexpr int MAX_WATER_PARTICLES = 2000;     // 增加粒子数量
+    static constexpr float PARTICLE_MIN_SIZE = 2.0f;     // 增加最小粒子尺寸
+    static constexpr float PARTICLE_MAX_SIZE = 15.0f;     // 增加最大粒子尺寸
+    static constexpr float PARTICLE_MIN_ALPHA = 0.3f;    // 增加最小透明度
+    static constexpr float PARTICLE_MAX_ALPHA = 0.8f;    // 增加最大透明度
+    static constexpr float PARTICLE_FADE_TIME = 3.0f;    // 增加淡入淡出时间
+    static constexpr float PARTICLE_SPAWN_RADIUS = 600.0f; // 增加生成范围
+    static constexpr float PARTICLE_SPAWN_HEIGHT = 300.0f; // 增加高度范围
+    static constexpr float PARTICLE_LIFE_MIN = 3.0f;     // 增加最小生命周期
+    static constexpr float PARTICLE_LIFE_MAX = 6.0f;     // 增加最大生命周期
     
     std::vector<WaterParticle> waterParticles;
     GLuint waterParticleTexture;
