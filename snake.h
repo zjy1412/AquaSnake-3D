@@ -34,6 +34,9 @@ public:
     void rotateAroundAxis(const glm::vec3& axis, float angle);
 
 private:
+    void drawDorsalFin(const glm::vec3& pos, const glm::vec3& dir, const glm::vec3& up, float size);
+    void setGradientColor(float t) const;
+    
     std::vector<glm::vec3> body;
     glm::vec3 direction;
     glm::vec3 targetDirection;
@@ -45,6 +48,17 @@ private:
     static constexpr float MIN_DIRECTION_CHANGE = 0.05f;
     static constexpr float MAX_TURN_ANGLE = 90.0f;
     glm::vec3 upDirection;
+    
+    static constexpr float FIN_HEIGHT_RATIO = 0.6f;
+    static constexpr float FIN_LENGTH_RATIO = 0.8f;
+    
+    static constexpr float GRADIENT_TOP_R = 0.2f;
+    static constexpr float GRADIENT_TOP_G = 0.8f;
+    static constexpr float GRADIENT_TOP_B = 0.2f;
+    static constexpr float GRADIENT_BOTTOM_R = 0.1f;
+    static constexpr float GRADIENT_BOTTOM_G = 0.5f;
+    static constexpr float GRADIENT_BOTTOM_B = 0.1f;
+    
     void updateDirections();
 };
 

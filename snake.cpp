@@ -4,6 +4,7 @@
 #include "snake.h"
 #include <cmath>
 #include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 Snake::Snake(float x, float y, float z)
     : segmentSize(DEFAULT_SEGMENT_SIZE)
@@ -130,8 +131,52 @@ bool Snake::checkSelfCollision() const
     return false;
 }
 
-void Snake::draw()  // 移除 const 限定符
-{
+void Snake::setGradientColor(float t) const {
+    // t 是从0到1的参数，0代表底部，1代表顶部
+    float r = GRADIENT_BOTTOM_R + (GRADIENT_TOP_R - GRADIENT_BOTTOM_R) * t;
+    float g = GRADIENT_BOTTOM_G + (GRADIENT_TOP_G - GRADIENT_BOTTOM_G) * t;
+    float b = GRADIENT_BOTTOM_B + (GRADIENT_TOP_B - GRADIENT_BOTTOM_B) * t;
+    glColor3f(r, g, b);
+}
+
+void Snake::drawDorsalFin(const glm::vec3& pos, const glm::vec3& dir, const glm::vec3& up, float size) {
+    glm::vec3 right = glm::normalize(glm::cross(dir, up));
+    
+    // 计算背鳍的基准点（从蛇身体表面开始）
+    glm::vec3 finBase = pos + up * size;  // 从球体表面开始
+    
+    // 计算背鳍的顶点
+    glm::vec3 finTop = finBase + up * (size * FIN_HEIGHT_RATIO);  // 从表面向上延伸
+    glm::vec3 finFrontBase = finBase + dir * (size * FIN_LENGTH_RATIO * 0.5f);
+    glm::vec3 finBackBase = finBase - dir * (size * FIN_LENGTH_RATIO * 0.5f);
+    
+    // 设置背鳍材质
+    GLfloat finSpecular[] = { 0.8f, 0.8f, 0.8f, 1.0f };
+    GLfloat finShininess[] = { 32.0f };
+    glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, finSpecular);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, finShininess);
+    
+    // 绘制背鳍（三角形）
+    glBegin(GL_TRIANGLES);
+    
+    // 正面
+    setGradientColor(1.0f);  // 顶部颜色
+    glVertex3fv(glm::value_ptr(finTop));
+    setGradientColor(0.0f);  // 底部颜色
+    glVertex3fv(glm::value_ptr(finFrontBase));
+    glVertex3fv(glm::value_ptr(finBackBase));
+    
+    // 背面（反向绘制以确保双面可见）
+    setGradientColor(1.0f);
+    glVertex3fv(glm::value_ptr(finTop));
+    setGradientColor(0.0f);
+    glVertex3fv(glm::value_ptr(finBackBase));
+    glVertex3fv(glm::value_ptr(finFrontBase));
+    
+    glEnd();
+}
+
+void Snake::draw() {
     // 保存当前的OpenGL状态
     glPushAttrib(GL_ALL_ATTRIB_BITS);
     glPushMatrix();
@@ -147,14 +192,29 @@ void Snake::draw()  // 移除 const 限定符
         glPushMatrix();
         glTranslatef(body[i].x, body[i].y, body[i].z);
         
+        // 计算当前段的方向
+        glm::vec3 segmentDir = (i < body.size() - 1) ? 
+            glm::normalize(body[i+1] - body[i]) : 
+            glm::normalize(body[i] - body[i-1]);
+            
         if(i == 0) {
-            glColor3f(1.0f, 0.5f, 0.5f);
+            // 蛇头
+            setGradientColor(1.0f);  // 使用顶部颜色
             drawSphere(segmentSize * 1.3f, 24, 24);
+            // 为蛇头添加更大的背鳍
+            drawDorsalFin(glm::vec3(0), direction, upDirection, segmentSize * 1.4f);
         } else {
-            float fade = 1.0f - (float)i / body.size() * 0.3f;
-            glColor3f(0.4f, fade, 0.4f);
+            // 蛇身
+            float t = 1.0f - (float)i / body.size() * 0.3f;  // 渐变参数
+            setGradientColor(t);
             drawSphere(segmentSize * 1.1f, 20, 20);
+            
+            // 为每个身体段添加较小的背鳍
+            if(i % 2 == 0) {  // 每隔一段添加背鳍，使外观更自然
+                drawDorsalFin(glm::vec3(0), segmentDir, upDirection, segmentSize * 0.9f);
+            }
         }
+        
         glPopMatrix();
     }
     
