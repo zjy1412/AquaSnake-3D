@@ -29,6 +29,4 @@ Makefile
 .env
 .aider*
 
-objs
-
 src
