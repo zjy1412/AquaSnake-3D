@@ -20,7 +20,7 @@ Makefile
 *.so
 *.a
 *.o
-*.obj
+# *.obj
 
 # Temp files
 *.log
