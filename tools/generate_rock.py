@@ -1,0 +1,159 @@
+import numpy as np
+import random
+import os
+
+class RockGenerator:
+    def __init__(self, base_vertices=8, roughness=0.3, seed=None):
+        if seed is not None:
+            np.random.seed(seed)
+            random.seed(seed)
+        
+        self.base_vertices = base_vertices
+        self.roughness = roughness
+        
+    def generate_base_shape(self):
+        # 生成上半球的点
+        angles = np.linspace(0, 2*np.pi, self.base_vertices, endpoint=False)
+        vertices = []
+        
+        # 底部中心点
+        vertices.append([0, -1, 0])
+        
+        # 底部周围的点（略微抬高，但保持更加平整）
+        height = -0.9
+        for angle in angles:
+            r = 1.0 + random.uniform(-0.1, 0.1)  # 减小随机范围
+            x = r * np.cos(angle)
+            z = r * np.sin(angle)
+            y = height + random.uniform(-0.05, 0.05)  # 减小高度变化
+            vertices.append([x, y, z])
+        
+        # 中间的点（3层，增加层数以提高平滑度）
+        layers = 3
+        for i in range(layers):
+            height = -0.5 + i * 0.5
+            vertex_count = self.base_vertices  # 保持每层顶点数量一致
+            curr_angles = np.linspace(0, 2*np.pi, vertex_count, endpoint=False)
+            curr_angles += random.uniform(0, 2*np.pi/vertex_count) * 0.5  # 减小随机旋转
+            
+            for angle in curr_angles:
+                r = 0.8 - i * 0.15 + random.uniform(-0.1, 0.1)  # 减小半径变化
+                x = r * np.cos(angle)
+                z = r * np.sin(angle)
+                y = height + random.uniform(-0.1, 0.1)
+                vertices.append([x, y, z])
+        
+        # 顶部点
+        vertices.append([0, 1, 0])  # 使用正中心点
+        
+        return np.array(vertices)
+    
+    def generate_faces(self, vertices):
+        faces = []
+        bottom_center_idx = 0
+        bottom_ring_start = 1
+        bottom_ring_end = self.base_vertices + 1
+        
+        # 底部三角形
+        for i in range(bottom_ring_start, bottom_ring_end):
+            next_i = i + 1 if i < bottom_ring_end - 1 else bottom_ring_start
+            faces.append([bottom_center_idx + 1, i + 1, next_i + 1])
+        
+        # 生成侧面
+        current_ring_start = bottom_ring_start
+        vertices_count = len(vertices)
+        
+        while current_ring_start < vertices_count - 2:
+            current_ring_size = self.base_vertices
+            next_ring_start = current_ring_start + current_ring_size
+            
+            if next_ring_start >= vertices_count - 1:
+                # 连接到顶点
+                top_vertex = vertices_count - 1
+                for i in range(current_ring_size):
+                    current_vertex = current_ring_start + i
+                    next_vertex = current_ring_start + ((i + 1) % current_ring_size)
+                    faces.append([current_vertex + 1, next_vertex + 1, top_vertex + 1])
+                break
+            
+            # 生成侧面三角形，使用更规则的模式
+            for i in range(current_ring_size):
+                current_vertex = current_ring_start + i
+                next_vertex = current_ring_start + ((i + 1) % current_ring_size)
+                upper_vertex = next_ring_start + i
+                upper_next_vertex = next_ring_start + ((i + 1) % current_ring_size)
+                
+                # 添加两个三角形形成一个四边形
+                faces.append([current_vertex + 1, next_vertex + 1, upper_vertex + 1])
+                faces.append([next_vertex + 1, upper_next_vertex + 1, upper_vertex + 1])
+            
+            current_ring_start = next_ring_start
+        
+        return faces
+    
+    def apply_roughness(self, vertices):
+        # 改进的roughness应用，更温和的扰动
+        for i in range(1, len(vertices)):
+            if i == len(vertices) - 1:  # 保持顶点位置不变
+                continue
+                
+            if vertices[i][1] > -0.9:  # 不处理最底部的顶点
+                # 根据高度调整roughness
+                height_factor = (vertices[i][1] + 1) / 2
+                local_roughness = self.roughness * (0.3 + height_factor * 0.4)  # 减小整体扰动
+                
+                # 计算到中心轴的距离
+                xz_dist = np.sqrt(vertices[i][0]**2 + vertices[i][2]**2)
+                radial_factor = min(0.8, xz_dist)  # 限制最大扰动
+                
+                # 在球面上进行扰动
+                direction = vertices[i] / np.linalg.norm(vertices[i])
+                noise = np.random.normal(0, local_roughness * radial_factor, 3)
+                # 将噪声投影到切平面上，并限制最大位移
+                noise = noise - np.dot(noise, direction) * direction
+                noise_magnitude = np.linalg.norm(noise)
+                if noise_magnitude > 0.2:  # 限制最大位移
+                    noise = noise * (0.2 / noise_magnitude)
+                vertices[i] += noise
+        
+        return vertices
+    
+    def generate_rock(self):
+        vertices = self.generate_base_shape()
+        vertices = self.apply_roughness(vertices)
+        faces = self.generate_faces(vertices)
+        return vertices, faces
+    
+    def save_to_obj(self, filename, vertices, faces):
+        with open(filename, 'w') as f:
+            f.write("# Rock model generated by RockGenerator\n")
+            
+            # 写入顶点
+            for v in vertices:
+                f.write(f"v {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}\n")
+            
+            # 写入面
+            for face in faces:
+                f.write(f"f {' '.join(map(str, face))}\n")
+
+def generate_multiple_rocks(count, output_dir="rocks"):
+    # 创建输出目录
+    os.makedirs(output_dir, exist_ok=True)
+    
+    for i in range(count):
+        # 随机参数
+        base_vertices = random.randint(6, 10)
+        roughness = random.uniform(0.1, 0.4)
+        
+        # 生成岩石
+        generator = RockGenerator(base_vertices=base_vertices, roughness=roughness, seed=i)
+        vertices, faces = generator.generate_rock()
+        
+        # 保存文件
+        filename = os.path.join(output_dir, f"rock_{i+1}.obj")
+        generator.save_to_obj(filename, vertices, faces)
+        print(f"Generated {filename}")
+
+if __name__ == "__main__":
+    # 生成5个不同的岩石
+    generate_multiple_rocks(5, output_dir="objs/rock") 

@@ -10,6 +10,7 @@
 #include <glm/glm.hpp>  
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>  
+#include <random>  // 添加随机数生成器头文件
 #include "snake.h"
 #include "obstacle.h"
 #include "food.h"
@@ -81,14 +82,14 @@ private:
     GLuint waterShader;
     void initWaterEffect();
     void drawWater();
-    float cameraAngle;    // 添加相机角度
+    float cameraAngle;    // 添加相机���度
     const float CAMERA_DEFAULT_ANGLE = -30.0f;  
     const float DEFAULT_CAMERA_DISTANCE = -20.0f;
     const float DEFAULT_CAMERA_HEIGHT = 15.0f;
     const float AQUARIUM_DEFAULT_SIZE = 5000.0f;
     const float SEGMENT_SIZE = 100.0f;
     const float MIN_FOOD_DISTANCE = 400.0f;
-    const int MAX_OBSTACLES = 100;
+    const int MAX_OBSTACLES = 30;
     const int MIN_FOOD_COUNT = 100;
     std::vector<Food> foods;
 
@@ -166,7 +167,7 @@ private:
     static const char* volumetricLightVertexShader;   // 体积顶点着色器
     static const char* volumetricLightFragmentShader; // 体积光片段着色器
 
-    // 资源句柄
+    // ���源句柄
     GLuint volumetricLightFBO;        // 体积光FBO
     GLuint volumetricLightTexture;    // 体积光纹理
     GLuint waterNormalTexture;        // 水面法线纹理

@@ -255,7 +255,7 @@ void GameWidget::drawSceneObjects()
     glEnable(GL_LIGHTING);
     glEnable(GL_COLOR_MATERIAL);
     
-    // 绘制障���物
+    // 绘制障碍物
     for(const auto& obstacle : obstacles) {
         // 设置物体材质
         glColor4f(0.6f, 0.6f, 0.6f, 1.0f);  // 基础颜色
@@ -340,7 +340,7 @@ void GameWidget::updateGame()
                         glm::normalize(snake->getDirection()) * 
                         snake->getMovementSpeed();
     
-    // 如果下一个位��会出界，不移动蛇，等待新的输入
+    // 如果下一个位置会出界，不移动蛇，等待新的输入
     if(!isInAquarium(nextPos)) {
         return;  // 直接返回，不结束游戏
     }
@@ -441,7 +441,7 @@ void GameWidget::updateCamera()
         // 相机始终看向蛇头，保持固定的上方向
         cameraTarget = glm::mix(cameraTarget, snakeHead, TOP_DOWN_SMOOTH_FACTOR);
         
-        // 构建视图矩阵，使用固定的世界空间上方向
+        // 构建视图矩阵，使用固定���世界空间上方向
         viewMatrix = glm::lookAt(
             cameraPos,
             cameraTarget,
@@ -521,7 +521,7 @@ void GameWidget::spawnFood()
                 (float(rand()) / RAND_MAX * 2.0f - 1.0f) * range
             );
             
-            // 检查与其他食物的距离
+            // ���查与其他食物的距离
             bool tooClose = false;
             for (const auto& existingFood : foods) {
                 if (glm::distance(newFoodPos, existingFood.getPosition()) < MIN_FOOD_DISTANCE) {
@@ -605,7 +605,7 @@ void GameWidget::drawAquarium()
     
     // 底部四条线
     glVertex3f(-aquariumSize, -hs, -aquariumSize); glVertex3f(aquariumSize, -hs, -aquariumSize);
-    glVertex3f(-aquariumSize, -hs, aquariumSize); glVertex3f(aquariumSize, -hs, aquariumSize);
+    glVertex3f(-aquariumSize, -hs, -aquariumSize); glVertex3f(aquariumSize, -hs, aquariumSize);
     glVertex3f(-aquariumSize, -hs, -aquariumSize); glVertex3f(-aquariumSize, -hs, aquariumSize);
     glVertex3f(aquariumSize, -hs, -aquariumSize); glVertex3f(aquariumSize, -hs, aquariumSize);
     
@@ -623,7 +623,7 @@ void GameWidget::drawAquarium()
     glEnd();
 
     // 修深度测试设置并绘制透明面
-    glDepthMask(GL_FALSE);  // 禁用深度写入
+    glDepthMask(GL_FALSE);  // 禁度写入
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDisable(GL_CULL_FACE);
@@ -697,7 +697,7 @@ void GameWidget::drawAquarium()
             // 相机在外部时，面向相的面完全透明
             alpha = (dotProduct < 0.0f) ? 0.01f : baseAlpha;  // 低的透明度
         } else {
-            // 相机在内部时使用正常透明度
+            // 相机在内部时使用透明度
             alpha = baseAlpha;
         }
         
@@ -755,19 +755,94 @@ void GameWidget::drawAquarium()
 void GameWidget::initObstacles()
 {
     obstacles.clear();
-    for(int i = 0; i < MAX_OBSTACLES; ++i) {
-        float range = aquariumSize * 0.8f;
+    int maxAttempts = 1000;  // 增加最大尝试次数
+    
+    // 基于水族箱大小计算障碍物尺寸
+    const float BASE_OBSTACLE_SIZE = aquariumSize * 0.0025f;  // 水族箱大小的0.25%
+    const float ROCK_SIZE = BASE_OBSTACLE_SIZE * 1.2f;      // 岩石稍大一些
+    const float SPIKY_SIZE = BASE_OBSTACLE_SIZE * 1.1f;     // 尖刺球介于两者之间
+    
+    // 首先放置岩石（固定数量15个）
+    int rocksPlaced = 0;
+    while (rocksPlaced < Obstacle::MAX_ROCKS && maxAttempts > 0) {
+        float range = aquariumSize * 0.8f;  // 在80%的范围内放置
         float x = (float(rand()) / RAND_MAX * 2.0f - 1.0f) * range;
-        float y = (float(rand()) / RAND_MAX * 2.0f - 1.0f) * range * 0.5f;
         float z = (float(rand()) / RAND_MAX * 2.0f - 1.0f) * range;
+        float y = -aquariumSize * 0.45f;  // 固定在底部
         
-        // 确保障会出现在蛇的初始位置附近
-        if(glm::length(glm::vec3(x, y, z) - snake->getHeadPosition()) < 100.0f) {
+        glm::vec3 newPos(x, y, z);
+        
+        // 确保岩石不会出现在蛇的初始位置附近
+        if (glm::length(newPos - snake->getHeadPosition()) < aquariumSize * 0.1f) {
+            maxAttempts--;
             continue;
         }
         
-        obstacles.emplace_back(glm::vec3(x, y, z), 50.0f);  // 增大障碍物尺寸
+        // 检查与现有障碍物的重叠
+        bool overlapping = false;
+        for (const auto& obstacle : obstacles) {
+            float minDistance = (obstacle.getRadius() + ROCK_SIZE) * 2.0f;  // 增加岩石间距
+            if (glm::length(obstacle.getPosition() - newPos) < minDistance) {
+                overlapping = true;
+                break;
+            }
+        }
+        
+        if (!overlapping) {
+            obstacles.emplace_back(newPos, ROCK_SIZE, Obstacle::Type::ROCK);
+            rocksPlaced++;
+        }
+        
+        maxAttempts--;
     }
+    
+    // 然后放置其他障碍物（总共80个）
+    int otherObstaclesPlaced = 0;
+    maxAttempts = 1000;  // 重置尝试次数
+    
+    while (otherObstaclesPlaced < Obstacle::MAX_OTHER_OBSTACLES && maxAttempts > 0) {
+        float range = aquariumSize * 0.8f;
+        float x = (float(rand()) / RAND_MAX * 2.0f - 1.0f) * range;
+        float z = (float(rand()) / RAND_MAX * 2.0f - 1.0f) * range;
+        float y = (float(rand()) / RAND_MAX * 2.0f - 1.0f) * range * 0.5f;  // 高度范围减半
+        
+        glm::vec3 newPos(x, y, z);
+        
+        // 确保不会出现在蛇的初始位置附近
+        if (glm::length(newPos - snake->getHeadPosition()) < aquariumSize * 0.1f) {
+            maxAttempts--;
+            continue;
+        }
+        
+        // 随机选择障碍物类型（尖刺球或立方体）
+        Obstacle::Type obstacleType = (float(rand()) / RAND_MAX < 0.6f) ? 
+                                    Obstacle::Type::SPIKY_SPHERE : 
+                                    Obstacle::Type::CUBE;
+        
+        float obstacleSize = (obstacleType == Obstacle::Type::SPIKY_SPHERE) ? 
+                            SPIKY_SIZE : BASE_OBSTACLE_SIZE * 0.7f;
+        
+        // 检查与现有障碍物的重叠
+        bool overlapping = false;
+        for (const auto& obstacle : obstacles) {
+            float minDistance = (obstacle.getRadius() + obstacleSize) * 1.5f;
+            if (glm::length(obstacle.getPosition() - newPos) < minDistance) {
+                overlapping = true;
+                break;
+            }
+        }
+        
+        if (!overlapping) {
+            obstacles.emplace_back(newPos, obstacleSize, obstacleType);
+            otherObstaclesPlaced++;
+        }
+        
+        maxAttempts--;
+    }
+    
+    qDebug() << "成功生成障碍物：" 
+             << "\n岩石数量:" << rocksPlaced 
+             << "\n其他障碍物数量:" << otherObstaclesPlaced;
 }
 
 void GameWidget::resetGame()
@@ -788,7 +863,7 @@ void GameWidget::resetGame()
     snake = new Snake(-5.0f, 0.0f, 0.0f);
     emit lengthChanged(snake->getBody().size());
     
-    // 如果OpenGL已初始化，则初始化蛇的OpenGL函��
+    // 如果OpenGL已初始化，则初始化蛇的OpenGL函数
     if (context() && context()->isValid()) {
         snake->initializeGL();
     }
@@ -898,7 +973,7 @@ void GameWidget::applyLightSettings() {
         glDisable(GL_LIGHT0 + i);
     }
 
-    // 应用个光源
+    // 应用光源
     for(size_t i = 0; i < numLights; ++i) {
         const auto& light = lightSources[i];
         GLenum lightEnum = GL_LIGHT0 + i;
@@ -913,7 +988,7 @@ void GameWidget::applyLightSettings() {
         glLightfv(lightEnum, GL_POSITION, position);
 
         if(light.spotCutoff > 0.0f) {
-            // 配置聚光灯参数
+            // 配置聚光灯数
             glLightf(lightEnum, GL_SPOT_CUTOFF, light.spotCutoff);
             glLightf(lightEnum, GL_SPOT_EXPONENT, light.spotExponent);
             GLfloat direction[] = {
@@ -974,7 +1049,7 @@ void GameWidget::updateLights() {
     float time = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count() / 1000.0f;
     
     // 更新光束位置和方向
-    for(size_t i = 4; i < 7; ++i) {  // 更新束光柱
+    for(size_t i = 4; i < 7; ++i) {  // 更新束柱
         if(i >= lightSources.size()) continue;
         
         float phase = time * 0.2f + (i - 4) * glm::pi<float>() * 0.3f;
@@ -1037,7 +1112,7 @@ void GameWidget::renderUnderwaterEffects() {
         depthFactor
     );
     
-    // 设置��效参数
+    // 设置雾效参数
     float fogDensity = 0.0002f * (1.0f + depthFactor * 0.3f);  // 降低基础雾气密度
     GLfloat fogCol[] = { fogColor.r, fogColor.g, fogColor.b, 1.0f };
     glFogfv(GL_FOG_COLOR, fogCol);
@@ -1057,7 +1132,7 @@ void GameWidget::renderUnderwaterEffects() {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
-    // 渲染全屏色调叠加
+    // 渲���全屏色调叠加
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
@@ -1075,7 +1150,7 @@ void GameWidget::renderUnderwaterEffects() {
     glEnd();
     glEnable(GL_DEPTH_TEST);
     
-    // 恢复矩阵
+    // 复矩阵
     glPopMatrix();
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
