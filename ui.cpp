@@ -195,7 +195,7 @@ GameHUD::GameHUD(QWidget* parent)
     // 添加弹性空间
     mainLayout->addStretch();
     
-    // 右侧放置按���
+    // 右侧放置按钮
     QHBoxLayout* buttonLayout = new QHBoxLayout;
     buttonLayout->setSpacing(10);
     buttonLayout->addWidget(pauseResumeButton);
@@ -206,13 +206,8 @@ GameHUD::GameHUD(QWidget* parent)
     
     // 修复暂停/继续按钮的逻辑
     connect(pauseResumeButton, &QPushButton::clicked, [this]() {
-        if (!m_isPaused) {  // 如果当前未暂停
-            m_isPaused = true;  // 设置为暂停
-            pauseResumeButton->setText("继续");  // 显示"继续"
-        } else {  // 如果当前已暂停
-            m_isPaused = false;  // 设置为未暂停
-            pauseResumeButton->setText("暂停");  // 显示"暂停"
-        }
+        m_isPaused = !m_isPaused;  // 切换暂停状态
+        pauseResumeButton->setText(m_isPaused ? "继续" : "暂停");
         emit pauseResumeClicked();
     });
     
@@ -226,6 +221,7 @@ void GameHUD::updateLength(int length) {
 // UIManager 实现
 UIManager::UIManager(QWidget* parent)
     : QStackedWidget(parent)
+    , musicManager(new MusicManager(this))
 {
     // 创建并添加菜单界面
     menuWidget = new MenuWidget(this);
@@ -246,8 +242,9 @@ UIManager::UIManager(QWidget* parent)
     connect(gameHUD, &GameHUD::restartClicked, this, &UIManager::restartGame);
     connect(gameWidget, &GameWidget::lengthChanged, gameHUD, &GameHUD::updateLength);
     
-    // 显示菜单
+    // 显示菜单并播放菜单音乐
     setCurrentWidget(menuWidget);
+    musicManager->playMenuMusic();
 }
 
 void UIManager::resizeEvent(QResizeEvent* event)
@@ -258,43 +255,35 @@ void UIManager::resizeEvent(QResizeEvent* event)
     }
 }
 
-void UIManager::startGame() {
-    // 创建新的游戏实例
-    if (gameWidget) {
-        delete gameWidget;
-    }
-    gameWidget = new GameWidget(this);
-    addWidget(gameWidget);
-    
-    // 重新连接信号
-    connect(gameWidget, &GameWidget::lengthChanged, gameHUD, &GameHUD::updateLength);
-    connect(gameWidget, &GameWidget::scoreChanged, [this](int score) {
-        // 可以在这里处理分数更新
-    });
-    
-    // 设置为当前widget并显示HUD
+void UIManager::startGame()
+{
     setCurrentWidget(gameWidget);
     gameHUD->show();
-    gameHUD->raise();
+    gameHUD->raise();  // 确保HUD在最上层
+    gameWidget->resetGame();
     gameWidget->setFocus();
-    gameHUD->updateLength(3);  // 设置初始长度
     
-    // 确保游戏处于正确的状态
-    gameWidget->resetGame();
+    // 切换到游戏音乐
+    musicManager->startGameMusic();
 }
 
-void UIManager::pauseResumeGame() {
-    if (gameWidget) {
-        if (gameHUD->getIsPaused()) {
-            gameWidget->pauseGame();
-        } else {
-            gameWidget->resumeGame();
-            gameWidget->setFocus();  // 确保游戏窗口获得焦点
-        }
+void UIManager::pauseResumeGame()
+{
+    if (gameHUD->getIsPaused()) {
+        // 如果当前是暂停状态，那么应该继续游戏
+        gameWidget->pauseGame();
+        // musicManager->startGameMusic();  // 继续播放游戏音乐
+    } else {
+        // 如果当前是运行状态，那么应该暂停游戏
+        gameWidget->resumeGame();
+        // musicManager->stopMusic();  // 暂停音乐
     }
+    gameWidget->setFocus();  // 确保游戏窗口获得焦点
 }
 
-void UIManager::restartGame() {
+void UIManager::restartGame()
+{
     gameWidget->resetGame();
-    gameHUD->updateLength(3);  // 重��长度
+    musicManager->startGameMusic();  // 重新开始游戏音乐
+    gameWidget->setFocus();  // 确保游戏窗口获得焦点
 } 

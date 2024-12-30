@@ -15,6 +15,7 @@ find_package(Qt6 COMPONENTS
     Widgets 
     OpenGL 
     OpenGLWidgets 
+    Multimedia
     REQUIRED
 )
 
@@ -28,6 +29,7 @@ set(SOURCES
     food.cpp
     water.cpp
     ui.cpp
+    music.cpp
 )
 
 set(HEADERS
@@ -37,6 +39,7 @@ set(HEADERS
     food.h
     water.h
     ui.h
+    music.h
 )
 
 set(GLEW_INCLUDE_DIR "D:/libraries/glew-2.2.0/include")
@@ -62,6 +65,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Widgets 
     Qt6::OpenGL 
     Qt6::OpenGLWidgets
+    Qt6::Multimedia
     opengl32 
     ${GLEW_LIBRARY} 
     glu32
@@ -72,4 +76,11 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     ${GLEW_DLL}
     $<TARGET_FILE_DIR:${PROJECT_NAME}>
+)
+
+# 添加后构建命令，复制音乐文件夹到输出目录
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/music
+    $<TARGET_FILE_DIR:${PROJECT_NAME}>/music
 )

@@ -13,6 +13,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include "gamewidget.h"
+#include "music.h"
 
 // 游戏内HUD界面
 class GameHUD : public QWidget {
@@ -83,6 +84,7 @@ private:
     MenuWidget* menuWidget;
     GameWidget* gameWidget;
     GameHUD* gameHUD;
+    MusicManager* musicManager;
 };
 
 #endif // UI_H 
