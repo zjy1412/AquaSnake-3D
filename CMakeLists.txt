@@ -22,24 +22,24 @@ find_package(Qt6 COMPONENTS
 find_package(OpenGL REQUIRED)
 
 set(SOURCES
-    main.cpp
-    gamewidget.cpp
-    snake.cpp
-    obstacle.cpp
-    food.cpp
-    water.cpp
-    ui.cpp
-    music.cpp
+    src/main.cpp
+    src/gamewidget.cpp
+    src/snake.cpp
+    src/obstacle.cpp
+    src/food.cpp
+    src/water.cpp
+    src/ui.cpp
+    src/music.cpp
 )
 
 set(HEADERS
-    gamewidget.h
-    snake.h
-    obstacle.h
-    food.h
-    water.h
-    ui.h
-    music.h
+    include/gamewidget.h
+    include/snake.h
+    include/obstacle.h
+    include/food.h
+    include/water.h
+    include/ui.h
+    include/music.h
 )
 
 set(GLEW_INCLUDE_DIR "D:/libraries/glew-2.2.0/include")
@@ -51,6 +51,7 @@ set(GLEW_DLL "D:/libraries/glew-2.2.0/bin/Release/x64/glew32.dll")
 set(GLM_INCLUDE_DIR "D:/libraries")  # 修改这行，因为glm.hpp在D:/libraries/glm/glm.hpp
 include_directories(${GLM_INCLUDE_DIR})
 
+include_directories(${CMAKE_SOURCE_DIR}/include)
 include_directories(${GLEW_INCLUDE_DIR})
 
 set(CMAKE_AUTOMOC ON)

@@ -28,5 +28,3 @@ Makefile
 
 .env
 .aider*
-
-src
