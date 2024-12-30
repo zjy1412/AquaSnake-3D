@@ -255,7 +255,7 @@ void GameWidget::drawSceneObjects()
     glEnable(GL_LIGHTING);
     glEnable(GL_COLOR_MATERIAL);
     
-    // 绘制障���物
+    // 绘制障碍物
     for(const auto& obstacle : obstacles) {
         // 设置物体材质
         glColor4f(0.6f, 0.6f, 0.6f, 1.0f);  // 基础颜色
@@ -340,7 +340,7 @@ void GameWidget::updateGame()
                         glm::normalize(snake->getDirection()) * 
                         snake->getMovementSpeed();
     
-    // 如果下一个位��会出界，不移动蛇，等待新的输入
+    // 如果下一个位置会出界，不移动蛇，等待新的输入
     if(!isInAquarium(nextPos)) {
         return;  // 直接返回，不结束游戏
     }
@@ -788,7 +788,7 @@ void GameWidget::resetGame()
     snake = new Snake(-5.0f, 0.0f, 0.0f);
     emit lengthChanged(snake->getBody().size());
     
-    // 如果OpenGL已初始化，则初始化蛇的OpenGL函��
+    // 如果OpenGL已初始化，则初始化蛇的OpenGL函数
     if (context() && context()->isValid()) {
         snake->initializeGL();
     }
@@ -1037,7 +1037,7 @@ void GameWidget::renderUnderwaterEffects() {
         depthFactor
     );
     
-    // 设置��效参数
+    // 设置有效参数
     float fogDensity = 0.0002f * (1.0f + depthFactor * 0.3f);  // 降低基础雾气密度
     GLfloat fogCol[] = { fogColor.r, fogColor.g, fogColor.b, 1.0f };
     glFogfv(GL_FOG_COLOR, fogCol);

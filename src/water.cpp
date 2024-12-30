@@ -249,7 +249,7 @@ Water::Water(float size) :
     viewMatrix(1.0f),
     originalState{false, false, false, {0.0f}, {0.0f}}
 {
-    // 调�����水体参数以优化游戏体验
+    // 调水体参数以优化游戏体验
     waterParams.deepColor = glm::vec3(0.1f, 0.2f, 0.4f);        // 更深的蓝色
     waterParams.shallowColor = glm::vec3(0.3f, 0.5f, 0.7f);     // 更亮的蓝色
     waterParams.waterDensity = 0.0002f;                         // 进一步降低水密度，提高能见度
@@ -453,7 +453,7 @@ void Water::init() {
         qDebug() << "- Speed:" << firstBubble.speed;
     }
     
-    // 检���OpenGL错误
+    // 检查OpenGL错误
     GLenum error = glGetError();
     if(error != GL_NO_ERROR) {
         qDebug() << "OpenGL error after initialization:" << error;
@@ -465,7 +465,7 @@ void Water::init() {
 void Water::initParticleSystem() {
     qDebug() << "\n=== Initializing Particle System ===";
     
-    // ���空并重新生成气泡
+    // 清空并重新生成气泡
     bubbles.clear();
     bubbleSpawnTimer = 0.0f;
     
@@ -543,7 +543,7 @@ void Water::initUnderwaterEffects() {
 }
 
 void Water::initShaders() {
-    // 创建并编译着��器
+    // 创建并编译着色器
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
     
@@ -925,7 +925,7 @@ void Water::renderUnderwaterEffects(const glm::mat4& projection, const glm::mat4
     glEnable(GL_FOG);
     glFogi(GL_FOG_MODE, GL_EXP2);
     
-    // 计算基于深��的雾色和密度
+    // 计算基于深度的雾色和密度
     glm::vec3 fogColor = glm::mix(
         waterParams.shallowColor * 0.7f,
         waterParams.deepColor * 0.5f,
@@ -1484,7 +1484,7 @@ void Water::beginUnderwaterEffect(const glm::mat4& proj, const glm::mat4& view) 
     
     // 调整雾气参数 - 使用更温和的基础值
     float baseDensity = 0.001f;  // 降低基础雾密度
-    float depthFactor = std::max(0.0f, -cameraPos.y);  // 直接使用深度��不再除以size
+    float depthFactor = std::max(0.0f, -cameraPos.y);  // 直接使用深度而不再除以size
     float currentDensity = baseDensity * (1.0f + depthFactor * 0.0005f);  // 大幅降低深度影响
     
     // 使用更柔和的颜色过渡
@@ -1505,7 +1505,7 @@ void Water::beginUnderwaterEffect(const glm::mat4& proj, const glm::mat4& view) 
     glFogf(GL_FOG_DENSITY, currentDensity);
     
     // 调整雾气起始和结束距离
-    glFogf(GL_FOG_START, 0.0f);  // ���相机位置开始
+    glFogf(GL_FOG_START, 0.0f);  // 从相机位置开始
     glFogf(GL_FOG_END, size * 5.0f);  // 延长雾气结束距离
     
     // 增强环境光以改善可见度
@@ -1757,7 +1757,7 @@ void Water::updateWaterParticles(float deltaTime, const glm::vec3& targetPos) {
         // 更新位置
         particle.position += particle.velocity * deltaTime;
         
-        // 使用PARTICLE_FADE_TIME进行淡入淡��
+        // 使用PARTICLE_FADE_TIME进行淡入淡出
         if (particle.life > particle.fadeState + PARTICLE_FADE_TIME) {
             // 淡入阶段
             if (particle.fadeState < PARTICLE_FADE_TIME) {
@@ -1873,7 +1873,7 @@ void Water::dumpOpenGLState() {
     glGetIntegerv(GL_BLEND, &blendEnabled);
     qDebug() << "Blend enabled:" << (blendEnabled == GL_TRUE);
     
-    // 检查深度测试状��
+    // 检查深度测试状态
     GLint depthTestEnabled;
     glGetIntegerv(GL_DEPTH_TEST, &depthTestEnabled);
     qDebug() << "Depth test enabled:" << (depthTestEnabled == GL_TRUE);
@@ -1883,7 +1883,7 @@ void Water::dumpOpenGLState() {
     glGetIntegerv(GL_DEPTH_WRITEMASK, &depthMask);
     qDebug() << "Depth mask enabled:" << (depthMask == GL_TRUE);
     
-    // 检查当前���定的纹理
+    // 检查当前绑定的纹理
     GLint boundTexture;
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &boundTexture);
     qDebug() << "Current bound texture:" << boundTexture;

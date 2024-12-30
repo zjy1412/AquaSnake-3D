@@ -47,7 +47,7 @@ public:
         float chromaDispersion = 0.02f;         // 增强色散效果
         float waterDensity = 0.0008f;           // 增加水密度
         float visibilityFalloff = 0.15f;        // 增加能见度衰减
-        float causticScale = 1.0f;              // 增大���散尺寸
+        float causticScale = 1.0f;              // 增大焦散尺寸
         float causticSpeed = 0.7f;              // 加快焦散动画
         float causticBlend = 0.8f;              // 增强焦散混合
         int causticLayers = 4;                  // 增加焦散层数
@@ -242,7 +242,7 @@ private:
     void saveGLState();
     void restoreGLState();
 
-    // ��加体积光参数
+    // 增加体积光参数
     struct VolumetricLightParams {
         float density = 0.8f;         // 增加密度
         float scattering = 0.7f;      // 散射系数
