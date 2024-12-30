@@ -606,8 +606,8 @@ void Water::createWaterSurface() {
     glGenVertexArrays(1, &waterVAO);
     glGenBuffers(1, &waterVBO);
 
-    // 使用成员变量waterHeight
-    float surfaceSize = size * 1.2f;   // 保持水面范围略大于水族箱
+    // 使用成员变量waterHeight，并将surfaceSize改为与水族箱大小相同
+    float surfaceSize = size;   // 移除1.2f的倍数，使水面大小与水族箱匹配
 
     float vertices[] = {
         // 顶面
