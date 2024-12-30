@@ -501,6 +501,12 @@ void GameWidget::updateCamera()
         1.0f,
         10000.0f
     );
+
+    // 设置蛇的投影和视图矩阵，用于视锥体剔除
+    if(snake) {
+        snake->setProjectionMatrix(projectionMatrix);
+        snake->setViewMatrix(viewMatrix);
+    }
 }
 
 void GameWidget::spawnFood()

@@ -32,10 +32,14 @@ public:
     glm::vec3 getUpDirection() const { return upDirection; }
     glm::vec3 getRightDirection() const { return glm::normalize(glm::cross(direction, upDirection)); }
     void rotateAroundAxis(const glm::vec3& axis, float angle);
+    void setProjectionMatrix(const glm::mat4& proj) { projectionMatrix = proj; }
+    void setViewMatrix(const glm::mat4& view) { viewMatrix = view; }
 
 private:
     void drawDorsalFin(const glm::vec3& pos, const glm::vec3& dir, const glm::vec3& up, float size);
     void setGradientColor(float t) const;
+    bool isSegmentInFrustum(const glm::vec3& position, float radius) const;
+    void extractFrustumPlanes();
     
     std::vector<glm::vec3> body;
     glm::vec3 direction;
@@ -60,6 +64,11 @@ private:
     static constexpr float GRADIENT_BOTTOM_B = 0.1f;
     
     void updateDirections();
+
+    glm::mat4 projectionMatrix;
+    glm::mat4 viewMatrix;
+    glm::vec4 frustumPlanes[6];
+    bool frustumPlanesUpdated;
 };
 
 #endif // SNAKE_H

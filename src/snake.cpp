@@ -12,6 +12,9 @@ Snake::Snake(float x, float y, float z)
     , direction(1.0f, 0.0f, 0.0f)
     , targetDirection(direction)
     , upDirection(0.0f, 1.0f, 0.0f)
+    , projectionMatrix(1.0f)
+    , viewMatrix(1.0f)
+    , frustumPlanesUpdated(false)
 {
     // 设置初始位置
     glm::vec3 initialPos(x, y, z);
@@ -176,7 +179,79 @@ void Snake::drawDorsalFin(const glm::vec3& pos, const glm::vec3& dir, const glm:
     glEnd();
 }
 
+void Snake::extractFrustumPlanes() {
+    // 计算视图投影矩阵
+    glm::mat4 viewProj = projectionMatrix * viewMatrix;
+    
+    // 提取左平面
+    frustumPlanes[0].x = viewProj[0][3] + viewProj[0][0];
+    frustumPlanes[0].y = viewProj[1][3] + viewProj[1][0];
+    frustumPlanes[0].z = viewProj[2][3] + viewProj[2][0];
+    frustumPlanes[0].w = viewProj[3][3] + viewProj[3][0];
+
+    // 提取右平面
+    frustumPlanes[1].x = viewProj[0][3] - viewProj[0][0];
+    frustumPlanes[1].y = viewProj[1][3] - viewProj[1][0];
+    frustumPlanes[1].z = viewProj[2][3] - viewProj[2][0];
+    frustumPlanes[1].w = viewProj[3][3] - viewProj[3][0];
+
+    // 提取底平面
+    frustumPlanes[2].x = viewProj[0][3] + viewProj[0][1];
+    frustumPlanes[2].y = viewProj[1][3] + viewProj[1][1];
+    frustumPlanes[2].z = viewProj[2][3] + viewProj[2][1];
+    frustumPlanes[2].w = viewProj[3][3] + viewProj[3][1];
+
+    // 提取顶平面
+    frustumPlanes[3].x = viewProj[0][3] - viewProj[0][1];
+    frustumPlanes[3].y = viewProj[1][3] - viewProj[1][1];
+    frustumPlanes[3].z = viewProj[2][3] - viewProj[2][1];
+    frustumPlanes[3].w = viewProj[3][3] - viewProj[3][1];
+
+    // 提取近平面
+    frustumPlanes[4].x = viewProj[0][3] + viewProj[0][2];
+    frustumPlanes[4].y = viewProj[1][3] + viewProj[1][2];
+    frustumPlanes[4].z = viewProj[2][3] + viewProj[2][2];
+    frustumPlanes[4].w = viewProj[3][3] + viewProj[3][2];
+
+    // 提取远平面
+    frustumPlanes[5].x = viewProj[0][3] - viewProj[0][2];
+    frustumPlanes[5].y = viewProj[1][3] - viewProj[1][2];
+    frustumPlanes[5].z = viewProj[2][3] - viewProj[2][2];
+    frustumPlanes[5].w = viewProj[3][3] - viewProj[3][2];
+
+    // 规范化所有平面
+    for(int i = 0; i < 6; ++i) {
+        float length = sqrt(frustumPlanes[i].x * frustumPlanes[i].x +
+                          frustumPlanes[i].y * frustumPlanes[i].y +
+                          frustumPlanes[i].z * frustumPlanes[i].z);
+        frustumPlanes[i] /= length;
+    }
+
+    frustumPlanesUpdated = true;
+}
+
+bool Snake::isSegmentInFrustum(const glm::vec3& position, float radius) const {
+    // 对于每个平面
+    for(int i = 0; i < 6; ++i) {
+        float distance = frustumPlanes[i].x * position.x +
+                        frustumPlanes[i].y * position.y +
+                        frustumPlanes[i].z * position.z +
+                        frustumPlanes[i].w;
+        
+        // 如果球体完全在平面的负面，则它在视锥体外
+        if(distance < -radius) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void Snake::draw() {
+    // 如果视锥体平面需要更新，则更新它们
+    if(!frustumPlanesUpdated) {
+        extractFrustumPlanes();
+    }
+
     // 保存当前的OpenGL状态
     glPushAttrib(GL_ALL_ATTRIB_BITS);
     glPushMatrix();
@@ -189,6 +264,12 @@ void Snake::draw() {
     
     // 绘制蛇的每个段
     for(size_t i = 0; i < body.size(); ++i) {
+        // 进行视锥体剔除测试
+        float segmentRadius = (i == 0) ? segmentSize * 1.3f : segmentSize * 1.1f;
+        if(!isSegmentInFrustum(body[i], segmentRadius)) {
+            continue; // 如果这个段不在视锥体内，跳过它的渲染
+        }
+
         glPushMatrix();
         glTranslatef(body[i].x, body[i].y, body[i].z);
         
@@ -199,18 +280,16 @@ void Snake::draw() {
             
         if(i == 0) {
             // 蛇头
-            setGradientColor(1.0f);  // 使用顶部颜色
+            setGradientColor(1.0f);
             drawSphere(segmentSize * 1.3f, 24, 24);
-            // 为蛇头添加更大的背鳍
             drawDorsalFin(glm::vec3(0), direction, upDirection, segmentSize * 1.4f);
         } else {
             // 蛇身
-            float t = 1.0f - (float)i / body.size() * 0.3f;  // 渐变参数
+            float t = 1.0f - (float)i / body.size() * 0.3f;
             setGradientColor(t);
             drawSphere(segmentSize * 1.1f, 20, 20);
             
-            // 为每个身体段添加较小的背鳍
-            if(i % 2 == 0) {  // 每隔一段添加背鳍，使外观更自然
+            if(i % 2 == 0) {
                 drawDorsalFin(glm::vec3(0), segmentDir, upDirection, segmentSize * 0.9f);
             }
         }
@@ -221,6 +300,9 @@ void Snake::draw() {
     // 恢复OpenGL状态
     glPopMatrix();
     glPopAttrib();
+
+    // 标记视锥体平面需要在下一帧更新
+    frustumPlanesUpdated = false;
 }
 
 void Snake::drawSphere(float radius, int sectors, int stacks)  // 移除 const 限定符
